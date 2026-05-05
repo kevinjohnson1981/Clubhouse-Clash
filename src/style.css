@@ -689,7 +689,7 @@ input[type=number] {
 }
 
 .app-logo {
-  width: 180px;
+  width: 220px;
   max-width: 100%;
   height: auto;
   margin: 8px auto 10px;
@@ -1398,7 +1398,7 @@ input[type=number] {
     color-mix(in srgb, var(--theme-accent, #2f7b49) 88%, black 12%),
     var(--theme-accent, #2f7b49)
   );
-  color: color-mix(in srgb, var(--theme-text, #173321) 20%, white 80%);
+  color: var(--theme-button-text, #f4f8f1);
 }
 
 .admin-primary-button:hover {

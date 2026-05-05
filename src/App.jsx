@@ -27,7 +27,8 @@ function App() {
     backgroundColor: "#e9efe8",
     buttonColor: "#6fb72d",
     textColor: "#071f3d",
-    cardColor: "#ffffff"
+    cardColor: "#ffffff",
+    buttonTextColor: "#f4f8f1"
   };
   const [view, setView] = useState("adminDashboard");
   const [user, setUser] = useState(null);
@@ -56,6 +57,12 @@ function App() {
   const [selectedTheme, setSelectedTheme] = useState("defaultGray");
   const [customTheme, setCustomTheme] = useState(defaultTheme);
   const initialAuthHandled = useRef(false);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }, [view]);
   
 
   const themeOptions = {
@@ -68,28 +75,32 @@ function App() {
       backgroundColor: "#dce6df",
       buttonColor: "#0a2444",
       textColor: "#071f3d",
-      cardColor: "#f9fbf8"
+      cardColor: "#f9fbf8",
+      buttonTextColor: "#d9e1ea"
     },
     mastersGreen: {
       label: "Clubhouse Green",
       backgroundColor: "#d9e6d4",
       buttonColor: "#2f7b49",
       textColor: "#0c2f22",
-      cardColor: "#f7fbf5"
+      cardColor: "#f7fbf5",
+      buttonTextColor: "#f4f8f1"
     },
     sunsetGold: {
       label: "Championship Cream",
       backgroundColor: "#f1ebdf",
       buttonColor: "#6fb72d",
       textColor: "#0b1f3c",
-      cardColor: "#fffdf8"
+      cardColor: "#fffdf8",
+      buttonTextColor: "#f4f8f1"
     },
     midnight: {
       label: "After Hours",
       backgroundColor: "#0b1d38",
       buttonColor: "#79c232",
       textColor: "#f4f8f1",
-      cardColor: "#132848"
+      cardColor: "#132848",
+      buttonTextColor: "#f4f8f1"
     },
     custom: {
       label: "Custom Theme",
@@ -110,10 +121,11 @@ function App() {
     : activeTheme;
 
   const defaultLogo = "/ClubhouseClashAppIcon.png";
+  const adminHeaderLogo = "/ClubhouseClashLogoMain.png";
 
   const headerLogoSrc =
-    view === "adminDashboard"
-      ? defaultLogo
+    user && isAdmin
+      ? adminHeaderLogo
       : selectedTournament?.logoUrl?.trim() || defaultLogo;
 
   const generateDefaultCode = () => {
@@ -359,7 +371,8 @@ useEffect(() => {
         "--theme-bg": shellTheme.backgroundColor,
         "--theme-accent": shellTheme.buttonColor,
         "--theme-card": shellTheme.cardColor,
-        "--theme-text": shellTheme.textColor
+        "--theme-text": shellTheme.textColor,
+        "--theme-button-text": shellTheme.buttonTextColor || "#f4f8f1"
       }}>
       <header className="app-shell-header">
         <div className="app-header">

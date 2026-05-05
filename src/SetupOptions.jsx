@@ -179,7 +179,10 @@ function SetupOptions({
                   <button
                     type="button"
                     className="custom-theme-preview-button"
-                    style={{ backgroundColor: themePreview.buttonColor, color: themePreview.textColor }}
+                    style={{
+                      backgroundColor: themePreview.buttonColor,
+                      color: themePreview.buttonTextColor || "#f4f8f1"
+                    }}
                   >
                     Theme Accent
                   </button>
