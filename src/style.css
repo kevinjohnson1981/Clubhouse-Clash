@@ -1544,7 +1544,9 @@ input[type=number] {
 }
 
 .admin-dashboard-meta span {
-  color: color-mix(in srgb, var(--tournament-row-text, var(--theme-text, #173321)) 78%, white 22%);
+  background: color-mix(in srgb, var(--tournament-row-card, var(--theme-card, #ffffff)) 62%, white 38%);
+  color: #071f3d;
+  border: 1px solid color-mix(in srgb, var(--tournament-row-accent, var(--theme-accent, #6fb72d)) 20%, transparent 80%);
 }
 
 .admin-dashboard-row-actions {
@@ -1562,13 +1564,21 @@ input[type=number] {
 }
 
 .admin-dashboard-row-actions button:not(.admin-danger-button) {
-  background: color-mix(in srgb, var(--tournament-row-card, var(--theme-card, #f5efe3)) 72%, white 28%);
-  color: var(--tournament-row-text, var(--theme-text, #173321));
-  border: 1px solid color-mix(in srgb, var(--tournament-row-accent, var(--theme-accent, #2f7b49)) 24%, transparent 76%);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--tournament-row-accent, var(--theme-accent, #2f7b49)) 88%, black 12%),
+    var(--tournament-row-accent, var(--theme-accent, #2f7b49))
+  );
+  color: #ffffff;
+  border: 1px solid color-mix(in srgb, var(--tournament-row-accent, var(--theme-accent, #2f7b49)) 80%, black 20%);
 }
 
 .admin-dashboard-row-actions button:not(.admin-danger-button):hover {
-  background: color-mix(in srgb, var(--tournament-row-card, var(--theme-card, #f5efe3)) 84%, white 16%);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--tournament-row-accent, var(--theme-accent, #2f7b49)) 72%, black 28%),
+    color-mix(in srgb, var(--tournament-row-accent, var(--theme-accent, #2f7b49)) 92%, black 8%)
+  );
 }
 
 .tournament-card {
