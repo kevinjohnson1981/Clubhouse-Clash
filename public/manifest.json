@@ -1,0 +1,20 @@
+{
+  "name": "Clubhouse Clash",
+  "short_name": "Clash",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#071f3d",
+  "theme_color": "#071f3d",
+  "icons": [
+    {
+      "src": "/CCAppIcon.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/CCAppIcon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

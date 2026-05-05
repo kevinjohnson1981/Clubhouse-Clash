@@ -1,0 +1,1544 @@
+import React, { useEffect, useState } from "react";
+import { db } from "./firebase";
+import { collection, query, where, getDocs, doc, setDoc, getDoc } from "firebase/firestore";
+import * as XLSX from "xlsx";
+import html2canvas from "html2canvas";
+import { useRef } from "react";
+
+function ScoreEntry({ selectedDate, tournamentId, matchType, players, selectedMatch, setScoresInApp, setTeamPointsInApp, teamPoints, teams = [], individualPlayers = [], eventFormat = "team" }) {
+
+  const [matchData, setMatchData] = useState(null);
+  const [localPlayers, setLocalPlayers] = useState([]);
+  const [teamPlayers, setTeamPlayers] = useState({ team1: [], team2: [] });
+  const [scores, setScores] = useState({});
+  const [loading, setLoading] = useState(true);
+  const holes = matchData?.teeBox?.holes || [];
+  const [holeImages, setHoleImages] = useState({});
+  const [selectedHoleImage, setSelectedHoleImage] = useState(null);
+  const [activeScorePicker, setActiveScorePicker] = useState(null);
+  const getMatchPairings = () => {
+    if (matchType !== "individualMatch9" || !selectedMatch?.pairings) return null;
+  
+    const front9 = selectedMatch.pairings.front9 || [];
+    const back9 = selectedMatch.pairings.back9 || [];
+  
+    return { front9, back9 };
+  };
+  const [visibleHalf, setVisibleHalf] = useState("front");
+  const [scorecardTab, setScorecardTab] = useState("front9"); // or "back9"
+
+  const getLiveTeam = (teamName) => {
+    return teams.find((t) => t.name === teamName) || null;
+  };
+
+  const getLiveTeamColor = (teamName) => {
+    return getLiveTeam(teamName)?.color || "gray";
+  };
+
+  const getPlayerTeamFromTournament = (playerName) => {
+    if (eventFormat === "individual") {
+      const player = individualPlayers.find((entry) => entry.name === playerName);
+      return player
+        ? {
+            name: player.name,
+            color: player.color || "#8c8170",
+            players: [player],
+          }
+        : null;
+    }
+
+    return (
+      teams.find((team) => team.players?.some((p) => p.name === playerName)) ||
+      matchData?.teams?.find((team) => team.players?.some((p) => p.name === playerName)) ||
+      null
+    );
+  };
+
+  const getTeamColor = (teamName) => {
+    const team = teams.find(t => t.name === teamName);
+    return team?.color || "#ccc"; // default fallback color
+  };
+  
+  const getContrastTextColor = (bgColor) => {
+    if (!bgColor) return "#000";
+  
+    // Expanded named color fallback mapping
+    const namedColors = {
+      red: "#ff0000",
+      blue: "#0000ff",
+      green: "#008000",
+      purple: "#800080",
+      orange: "#ffa500",
+      black: "#000000",
+      yellow: "#ffff00"
+    };
+  
+    const color = namedColors[bgColor.toLowerCase()] || bgColor;
+  
+    // Ensure valid hex
+    const hex = color.replace("#", "");
+    if (hex.length !== 6) return "#000"; // fallback to black
+  
+    const r = parseInt(hex.substr(0, 2), 16);
+    const g = parseInt(hex.substr(2, 2), 16);
+    const b = parseInt(hex.substr(4, 2), 16);
+  
+    // Calculate brightness
+    const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+  
+    return brightness > 140 ? "#000000" : "#ffffff";
+  };
+
+  const lightenColor = (color, amount = 0.75) => {
+    if (!color) return "#ffffff";
+
+    const namedColors = {
+      red: "#ff0000",
+      blue: "#0000ff",
+      green: "#008000",
+      purple: "#800080",
+      orange: "#ffa500",
+      black: "#000000",
+      yellow: "#ffff00"
+    };
+
+    const hexColor = namedColors[color.toLowerCase()] || color;
+
+    const hex = hexColor.replace("#", "");
+    if (hex.length !== 6) return "#ffffff";
+
+    const r = parseInt(hex.substring(0, 2), 16);
+    const g = parseInt(hex.substring(2, 4), 16);
+    const b = parseInt(hex.substring(4, 6), 16);
+
+    const newR = Math.round(r + (255 - r) * amount);
+    const newG = Math.round(g + (255 - g) * amount);
+    const newB = Math.round(b + (255 - b) * amount);
+
+    return `rgb(${newR}, ${newG}, ${newB})`;
+  };
+  
+  const getMatchPlayHoleWinner = (holeIndex) => {
+    if (!teamPlayers.team1 || !teamPlayers.team2) return null;
+  
+    const team1Best = getTeamBestBallScore(teamPlayers.team1, holeIndex);
+    const team2Best = getTeamBestBallScore(teamPlayers.team2, holeIndex);
+  
+    if (team1Best == null || team2Best == null) return null;
+    if (team1Best < team2Best) return "team1";
+    if (team2Best < team1Best) return "team2";
+    return "tie";
+  };
+
+  const getTeamRowHighlight = (winner) => {
+    if (!winner || winner === "tie") return "";
+  
+    const winningTeam = winner === "team1" ? teamPlayers.team1[0] : teamPlayers.team2[0];
+    const team = matchData.teams.find(t => t.players.some(p => p.name === winningTeam));
+    return team ? team.color : "";
+  };
+  
+
+
+
+  useEffect(() => {
+    const fetchMatchData = async () => {
+      try {
+        const matchQuery = query(
+          collection(db, "tournaments", tournamentId, "matches"),
+          where("date", "==", selectedDate)
+        );
+        const snapshot = await getDocs(matchQuery);
+  
+        if (!snapshot.empty) {
+          const docData = snapshot.docs[0].data();
+  
+          if (!selectedMatch) {
+            console.warn("❌ No match found for type:", matchType);
+          }
+  
+          setMatchData(docData); // keep full course and teeBox info
+          // setSelectedMatch(selectedMatch); // store the specific match
+        } else {
+          console.warn("No match document found for date:", selectedDate);
+        }
+      } catch (error) {
+        console.error("Error loading match data:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+  
+    fetchMatchData();
+  }, [tournamentId, selectedDate, matchType]);
+  
+  useEffect(() => {
+    if (!selectedMatch || !matchData) return;
+  
+    if (matchType === "teamMatch18") {
+      const team1 = selectedMatch.participants?.team1;
+      const team2 = selectedMatch.participants?.team2;
+    
+      if (!team1 || !team2) {
+        console.warn("⚠️ One or both teams missing in match participants.");
+        return;
+      }
+    
+      const allPlayers = [...team1.players, ...team2.players].map((playerName) => {
+        const teamName =
+          team1.players.includes(playerName) ? team1.teamName : team2.teamName;
+          const liveTeamObj = getLiveTeam(teamName);
+          const playerObj = liveTeamObj?.players?.find((p) => p.name === playerName);
+          
+          return {
+            name: playerName,
+            handicap: parseInt(playerObj?.handicap || 0),
+            teamName: teamName,
+            teamColor: getLiveTeamColor(teamName)
+          };
+      });
+    
+      setLocalPlayers(allPlayers);
+      setTeamPlayers({
+        team1: team1.players,
+        team2: team2.players
+      });
+    }
+    
+    if (matchType === "individualMatch9") {
+      const selectedPlayers = [
+        ...(selectedMatch?.front9?.playersA || []),
+        ...(selectedMatch?.front9?.playersB || []),
+        ...(selectedMatch?.back9?.playersA || []),
+        ...(selectedMatch?.back9?.playersB || [])
+      ];
+    
+      const uniquePlayers = [...new Set(selectedPlayers)];
+    
+      const allPlayers = uniquePlayers.map((name) => {
+        const liveTeamObj = getPlayerTeamFromTournament(name);
+        const playerObj = liveTeamObj?.players?.find((p) => p.name === name);
+    
+        return {
+          name,
+          handicap: parseInt(playerObj?.handicap || 0),
+          teamName: liveTeamObj?.name || "",
+          teamColor: liveTeamObj?.color || "gray"
+        };
+      });
+    
+      setLocalPlayers(allPlayers);
+    }
+
+    if (matchType === "teamMatch9") {
+      const team0 = selectedMatch.participants?.team0;
+      const team1 = selectedMatch.participants?.team1;
+    
+      if (!team0 || !team1) {
+        console.warn("⚠️ One or both teams missing in teamMatch9 participants.");
+        return;
+      }
+    
+      const allPlayers = [...(team0.players || []), ...(team1.players || [])].map((playerName) => {
+        const teamName = team0.players.includes(playerName) ? team0.teamName : team1.teamName;
+        const liveTeamObj = getLiveTeam(teamName);
+        const playerObj = liveTeamObj?.players?.find((p) => p.name === playerName);
+
+        return {
+          name: playerName,
+          handicap: parseInt(playerObj?.handicap || 0),
+          teamName: teamName,
+          teamColor: getLiveTeamColor(teamName)
+        };
+      });
+    
+      setLocalPlayers(allPlayers);
+      setTeamPlayers({
+        team1: team0.players,
+        team2: team1.players
+      });
+    }
+
+    if (matchType === "teamBestBall") {
+      const teamEntries = getTeamBestBallTeams();
+      const uniquePlayers = [...new Set(teamEntries.flatMap((entry) => entry.players || []))];
+
+      const allPlayers = uniquePlayers.map((playerName) => {
+        const teamEntry = teamEntries.find((entry) => entry.players?.includes(playerName));
+        const liveTeamObj = getLiveTeam(teamEntry?.teamName) || getPlayerTeamFromTournament(playerName);
+        const playerObj = liveTeamObj?.players?.find((p) => p.name === playerName);
+
+        return {
+          name: playerName,
+          handicap: parseInt(playerObj?.handicap || 0),
+          teamName: teamEntry?.teamName || liveTeamObj?.name || "",
+          teamColor: getLiveTeamColor(teamEntry?.teamName || liveTeamObj?.name || "")
+        };
+      });
+
+      setLocalPlayers(allPlayers);
+      setTeamPlayers({ team1: [], team2: [] });
+    }
+    
+    
+    
+  
+    if (matchType === "stableford") {
+      let participantNames = [];
+    
+      // ✅ Check if participants is an array of names (correct case)
+      if (Array.isArray(selectedMatch.participants)) {
+        participantNames = selectedMatch.participants;
+      }
+    
+      // ✅ Check if it's a map like { A: true, B: true }
+      else if (selectedMatch.participants && typeof selectedMatch.participants === 'object') {
+        participantNames = Object.keys(selectedMatch.participants);
+      }
+    
+      const allPlayers = participantNames.map((name) => {
+        const liveTeamObj = getPlayerTeamFromTournament(name);
+        const playerObj = liveTeamObj?.players?.find((p) => p.name === name);
+
+        return {
+          name,
+          handicap: parseInt(playerObj?.handicap || 0),
+          teamName: liveTeamObj?.name || "",
+          teamColor: liveTeamObj?.color || "gray"
+        };
+      });
+    
+      setLocalPlayers(allPlayers);
+    }
+    
+    
+  
+    if (matchType === "strokePlay" || matchType === "stroke") {
+      const entries = Array.isArray(selectedMatch.players)
+        ? selectedMatch.players
+        : Array.isArray(selectedMatch.participants)
+        ? selectedMatch.participants
+        : Object.keys(selectedMatch.participants || {});
+    
+      const allPlayers = entries.map((entry) => {
+        const playerName = typeof entry === "string" ? entry : entry.name;
+        const liveTeamObj = getPlayerTeamFromTournament(playerName);
+        const playerObj = liveTeamObj?.players?.find((p) => p.name === playerName);
+    
+        return {
+          name: playerName,
+          handicap: parseInt(playerObj?.handicap || 0),
+          teamName: liveTeamObj?.name || "",
+          teamColor: liveTeamObj?.color || "gray"
+        };
+      });
+    
+      setLocalPlayers(allPlayers);
+    }
+
+    if (matchType === "individualMatch18") {
+      const pairings = selectedMatch.pairings || [];
+    
+      const orderedPlayers = pairings.flatMap(pair => [pair.playerA, pair.playerB]);
+    
+      const allPlayers = orderedPlayers.map((name) => {
+        const liveTeamObj = getPlayerTeamFromTournament(name);
+        const playerObj = liveTeamObj?.players?.find((p) => p.name === name);
+
+        return {
+          name,
+          handicap: parseInt(playerObj?.handicap || 0),
+          teamName: liveTeamObj?.name || "",
+          teamColor: liveTeamObj?.color || "gray"
+        };
+      });
+    
+      setLocalPlayers(allPlayers);
+    }
+    
+    
+    
+  }, [selectedMatch, matchData, matchType, teams, individualPlayers, scorecardTab]);
+  
+
+  useEffect(() => {
+    const fetchSavedScores = async () => {
+      try {
+        if (!selectedMatch?.matchLabel) return;
+        const scoreDocRef = doc(db, "tournaments", tournamentId, "scores", `scores_${selectedDate}_${matchType}_${selectedMatch.matchLabel?.replace(/\s+/g, "_") || "Match"}`
+        );
+        const scoreSnap = await getDoc(scoreDocRef);
+
+        if (scoreSnap.exists()) {
+          const savedData = scoreSnap.data();
+          if (savedData.scores) {
+            setScores(savedData.scores);
+          }
+        }
+      } catch (error) {
+        console.error("Failed to load saved scores:", error);
+      }
+    };
+
+    if (selectedDate && matchType && selectedMatch?.matchLabel) {
+      fetchSavedScores();
+    }
+  }, [selectedDate, matchType, selectedMatch?.matchLabel, tournamentId]);
+
+  useEffect(() => {
+    if (setScoresInApp) {
+      setScoresInApp(scores);
+    }
+  }, [scores]);
+
+  useEffect(() => {
+    if (Object.keys(scores).length === 0) return;
+  
+    const timeout = setTimeout(() => {
+      saveScoresToFirebase(); // Debounced save
+    }, 1000); // 1 second after last change
+  
+    return () => clearTimeout(timeout); // cleanup
+  }, [scores]);
+  
+  
+
+  useEffect(() => {
+    if (
+      setTeamPointsInApp &&
+      (matchType === "teamMatch18") &&
+      matchData &&
+      teamPlayers.team1.length > 0 &&
+      teamPlayers.team2.length > 0
+    ) {
+      const front9 = getTeamScore(teamPlayers.team1, teamPlayers.team2, [...Array(9).keys()]);
+      const back9 = getTeamScore(teamPlayers.team1, teamPlayers.team2, [...Array(9).keys()].map(i => i + 9));
+
+      
+      const teamNames = [
+        selectedMatch?.participants?.team1?.teamName || "Team A",
+        selectedMatch?.participants?.team2?.teamName || "Team B"
+      ];
+        
+      
+
+      const teamPoints = {
+        [teamNames[0]]: {
+          front9: front9?.team1 ?? "-",
+          back9: back9?.team1 ?? "-",
+        },
+        [teamNames[1]]: {
+          front9: front9?.team2 ?? "-",
+          back9: back9?.team2 ?? "-",
+        }
+      };
+
+      setTeamPointsInApp(teamPoints);
+    }
+  }, [scores, matchType, matchData, teamPlayers]);
+
+  useEffect(() => {
+    if (matchType === "stableford" && matchData && players.length > 0) {
+      const teamTotals = {};
+    
+      localPlayers.forEach((playerObj) => {
+        const totalPoints = getStablefordPoints(playerObj.name, parseInt(playerObj.handicap));
+    
+        // 🔢 Convert individual player points into tiered team points
+        let teamPoints = 0;
+        if (totalPoints >= 18.5) teamPoints = 3;
+        else if (totalPoints >= 15.5) teamPoints = 2.5;
+        else if (totalPoints >= 12.5) teamPoints = 2;
+        else if (totalPoints >= 9.5) teamPoints = 1.5;
+        else if (totalPoints >= 6.5) teamPoints = 1;
+        else if (totalPoints >= 0.5) teamPoints = 0.5;
+    
+        if (!teamTotals[playerObj.teamName]) {
+          teamTotals[playerObj.teamName] = { total: 0 };
+        }
+    
+        teamTotals[playerObj.teamName].total += teamPoints;
+      });
+    
+      if (typeof setTeamPointsInApp === "function") {
+        setTeamPointsInApp(teamTotals);
+      }
+      
+    
+  }}, [scores, matchData, players, matchType]);
+
+  useEffect(() => {
+    if (matchType !== "teamBestBall" || typeof setTeamPointsInApp !== "function") return;
+
+    const teamTotals = {};
+    getTeamBestBallTeams().forEach((entry) => {
+      teamTotals[entry.teamName] = {
+        total: getTeamBestBallToPar(entry.players || [], [...Array(18).keys()])
+      };
+    });
+
+    setTeamPointsInApp(teamTotals);
+  }, [scores, matchType, selectedMatch, holes.length]);
+
+  
+  
+  
+
+  const scorecardRef = useRef(null);
+  
+  const updateScore = (playerName, holeIndex, grossScore) => {
+    if (grossScore === "") {
+      setScores((prev) => {
+        const updatedPlayerScores = { ...(prev[playerName] || {}) };
+        delete updatedPlayerScores[holeIndex];
+
+        if (Object.keys(updatedPlayerScores).length === 0) {
+          const nextScores = { ...prev };
+          delete nextScores[playerName];
+          return nextScores;
+        }
+
+        return {
+          ...prev,
+          [playerName]: updatedPlayerScores
+        };
+      });
+      return;
+    }
+
+    const gross = parseInt(grossScore);
+    if (isNaN(gross)) return;
+  
+    const player = localPlayers.find(p => p.name === playerName);
+    const handicap = parseInt(player?.handicap || 0);
+    const holeHcp = holes[holeIndex]?.handicap || 0;
+  
+    let strokes = 0;
+    if (handicap >= holeHcp) strokes = 1;
+    if (handicap >= holeHcp + 18) strokes = 2;
+  
+    const net = gross - strokes;
+    setScores((prev) => ({
+      ...prev,
+      [playerName]: {
+        ...prev[playerName],
+        [holeIndex]: {
+          gross,
+          net
+        }
+      }
+    }));
+  };
+
+  const activePickerPlayer = activeScorePicker
+    ? localPlayers.find((player) => player.name === activeScorePicker.playerName)
+    : null;
+  
+
+  if (loading) {
+    return (
+      <div className="admin-page-shell score-entry-page-shell">
+        <section className="admin-hero-card compact player-select-hero">
+          <div className="admin-hero-copy">
+            <h2>Loading Scorecard</h2>
+          </div>
+        </section>
+      </div>
+    );
+  }
+  if (!matchData) return <p>No match data found.</p>;
+  if (!localPlayers || localPlayers.length === 0) {
+    console.log("⚠️ No players found:", localPlayers);
+    return <p>No players available for this match.</p>;
+  }
+  
+
+  
+
+  const getGrossTotal = (playerName) => {
+    const playerScores = scores[playerName] || {};
+    return holes.reduce((total, _, i) => {
+      const scoreObj = playerScores[i];
+      return total + (parseInt(scoreObj?.gross) || 0);
+    }, 0);
+  };
+  
+
+  const getNetTotal = (playerName) => {
+    const playerScores = scores[playerName] || {};
+    return holes.reduce((total, _, i) => {
+      const scoreObj = playerScores[i];
+      return total + (parseInt(scoreObj?.net) || 0);
+    }, 0);
+  };
+  
+
+  const getStablefordPoints = (playerName) => {
+    if (matchType !== "stableford") return null;
+  
+    const playerScores = scores[playerName] || {};
+    return holes.reduce((points, hole, i) => {
+      const net = playerScores[i]?.net;
+      if (net == null || isNaN(net)) return points;
+  
+      const diff = net - hole.par;
+  
+      if (diff >= 2) return points + 0;
+      if (diff === 1) return points + 0.5;
+      if (diff === 0) return points + 1;
+      if (diff === -1) return points + 2;
+      if (diff === -2) return points + 3;
+      if (diff === -3) return points + 3;
+      if (diff <= -4) return points + 3;
+  
+      return points;
+    }, 0);
+  };
+  
+
+  function getNetScore(playerName, holeIndex) {
+    const net = scores[playerName]?.[holeIndex]?.net;
+    return isNaN(net) ? null : net;
+  }
+  
+
+  function getTeamBestBallScore(playerNames, holeIndex) {
+    const netScores = playerNames.map(name => getNetScore(name, holeIndex)).filter(score => score !== null);
+    return netScores.length ? Math.min(...netScores) : null;
+  }
+
+  function getBestBallHoleWinners(holeIndex) {
+    if (matchType !== "teamBestBall") return [];
+
+    return getTeamBestBallTeams().flatMap((teamEntry) => {
+      const bestNet = getTeamBestBallScore(teamEntry.players || [], holeIndex);
+      if (bestNet == null) return [];
+
+      return (teamEntry.players || []).filter(
+        (playerName) => scores[playerName]?.[holeIndex]?.net === bestNet
+      );
+    });
+  }
+
+  function getTeamBestBallToPar(playerNames, holesRange) {
+    let total = 0;
+    let hasScores = false;
+
+    holesRange.forEach((holeIndex) => {
+      const bestNet = getTeamBestBallScore(playerNames, holeIndex);
+      const holePar = holes[holeIndex]?.par;
+
+      if (bestNet == null || holePar == null || Number.isNaN(holePar)) return;
+
+      total += bestNet - holePar;
+      hasScores = true;
+    });
+
+    return hasScores ? total : null;
+  }
+
+  function formatToPar(value) {
+    if (value == null || value === "") return "—";
+    if (value === 0) return "E";
+    return value > 0 ? `+${value}` : `${value}`;
+  }
+
+  const getIndividualMatchScore = (pairings, holesRange) => {
+    const results = [];
+  
+    for (let pair of pairings) {
+      let playerA = pair.playerA;
+      let playerB = pair.playerB;
+  
+      let aWins = 0;
+      let bWins = 0;
+  
+      for (let i of holesRange) {
+        const a = scores[playerA]?.[i]?.net;
+        const b = scores[playerB]?.[i]?.net;
+        if (a == null || b == null) continue;
+  
+        if (a < b) aWins++;
+        else if (b < a) bWins++;
+      }
+  
+      let pointsA = 0.5;
+      let pointsB = 0.5;
+  
+      if (aWins > bWins) {
+        pointsA = 1;
+        pointsB = 0;
+      } else if (bWins > aWins) {
+        pointsA = 0;
+        pointsB = 1;
+      }
+  
+      results.push({
+        playerA,
+        playerB,
+        pointsA,
+        pointsB
+      });
+    }
+  
+    return results;
+  };
+  
+  const getIndividualHoleWinners = (holeIndex) => {
+    if (matchType !== "individualMatch9") return [];
+  
+    const currentPairings =
+      scorecardTab === "front9"
+        ? selectedMatch?.pairings?.front9 || []
+        : selectedMatch?.pairings?.back9 || [];
+  
+    const winners = [];
+  
+    currentPairings.forEach((pair) => {
+      const aNet = scores[pair.playerA]?.[holeIndex]?.net;
+      const bNet = scores[pair.playerB]?.[holeIndex]?.net;
+  
+      if (aNet == null || bNet == null) return;
+  
+      if (aNet < bNet) winners.push(pair.playerA);
+      else if (bNet < aNet) winners.push(pair.playerB);
+    });
+  
+    return winners;
+  };
+
+  const getTeamScore = (team1, team2, holesRange) => {
+    let team1Total = 0;
+    let team2Total = 0;
+    let holesPlayed = 0;
+
+    for (let i of holesRange) {
+      const team1Best = getTeamBestBallScore(team1, i);
+      const team2Best = getTeamBestBallScore(team2, i);
+
+      if (team1Best !== null && team2Best !== null) {
+        holesPlayed++;
+        if (team1Best < team2Best) team1Total++;
+        else if (team2Best < team1Best) team2Total++;
+      }
+    }
+
+    if (holesPlayed === 0) return null;
+    if (team1Total > team2Total) return { team1: 1, team2: 0 };
+    if (team2Total > team1Total) return { team1: 0, team2: 1 };
+    return { team1: 0.5, team2: 0.5 };
+  };
+
+  const getTeamNameFromMatchData = (playerName) => {
+    if (eventFormat === "individual") {
+      return playerName;
+    }
+
+    const team = matchData?.teams?.find((t) =>
+      t.players.some((p) => p.name === playerName)
+    );
+    return team?.name || null;
+  };
+
+  function getTeamBestBallTeams() {
+    return (selectedMatch?.participants || []).filter(
+      (entry) => entry?.teamName && Array.isArray(entry.players) && entry.players.length > 0
+    );
+  }
+  
+
+  const saveScoresToFirebase = async () => {
+    try {
+      const label = selectedMatch?.matchLabel?.replace(/\s+/g, "_") || "Match";
+      const scoresRef = doc(db, "tournaments", tournamentId, "scores", `scores_${selectedDate}_${matchType}_${label}`);
+
+      let teamPoints = null;
+
+      if (matchType === "teamMatch18") {
+        const front9 = getTeamScore(teamPlayers.team1, teamPlayers.team2, [...Array(9).keys()]);
+        const back9 = getTeamScore(teamPlayers.team1, teamPlayers.team2, [...Array(9).keys()].map(i => i + 9));
+        const full18 = getTeamScore(teamPlayers.team1, teamPlayers.team2, [...Array(18).keys()]);
+      
+        const teamNames = [
+          selectedMatch?.participants?.team1?.teamName,
+          selectedMatch?.participants?.team2?.teamName
+        ];
+      
+        teamPoints = {
+          [teamNames[0]]: {
+            front9: front9?.team1 ?? "-",
+            back9: back9?.team1 ?? "-",
+            total: full18?.team1 ?? "-"
+          },
+          [teamNames[1]]: {
+            front9: front9?.team2 ?? "-",
+            back9: back9?.team2 ?? "-",
+            total: full18?.team2 ?? "-"
+          }
+        };
+      }
+      
+      
+
+      if (matchType === "stableford") {
+        teamPoints = {};
+      
+        players.forEach((player) => {
+          const totalPoints = getStablefordPoints(player.name, parseInt(player.handicap));
+      
+          // Tiered scoring logic
+          let teamScore = 0;
+          if (totalPoints >= 18.5) teamScore = 3;
+          else if (totalPoints >= 15.5) teamScore = 2.5;
+          else if (totalPoints >= 12.5) teamScore = 2;
+          else if (totalPoints >= 9.5) teamScore = 1.5;
+          else if (totalPoints >= 6.5) teamScore = 1;
+          else if (totalPoints >= 0.5) teamScore = 0.5;
+      
+          // ✅ Fallback to matchData if player.teamName is missing
+          const teamName = player.teamName || getTeamNameFromMatchData(player.name);
+          if (!teamPoints[teamName]) {
+            teamPoints[teamName] = { total: 0 };
+          }
+      
+          teamPoints[teamName].total += teamScore;
+        });
+      }
+
+      if (matchType === "teamBestBall") {
+        teamPoints = {};
+        const teamEntries = getTeamBestBallTeams();
+
+        teamEntries.forEach((entry) => {
+          const totalToPar = getTeamBestBallToPar(entry.players || [], [...Array(18).keys()]);
+          teamPoints[entry.teamName] = { total: totalToPar };
+        });
+      }
+      
+      
+
+      if (matchType === "teamMatch9") {
+            // compute BOTH nines every time
+            const front9 = getTeamScore(
+              teamPlayers.team1,
+              teamPlayers.team2,
+              [...Array(9).keys()]            // 0-8
+            );
+            const back9  = getTeamScore(
+              teamPlayers.team1,
+              teamPlayers.team2,
+              [...Array(9).keys()].map(i => i + 9) // 9-17
+            );
+        
+            const teamNames = [
+              matchData.teams.find(t =>
+                t.players.some(p => p.name === teamPlayers.team1[0])
+              )?.name || "Team A",
+              matchData.teams.find(t =>
+                t.players.some(p => p.name === teamPlayers.team2[0])
+              )?.name || "Team B",
+            ];
+        
+            teamPoints = {
+              [teamNames[0]]: {
+                front9: front9?.team1 ?? "-",
+                back9: back9?.team1 ?? "-",
+                total:
+                  (typeof front9?.team1 === "number" ? front9.team1 : 0) +
+                  (typeof back9?.team1 === "number" ? back9.team1 : 0)
+              },
+              [teamNames[1]]: {
+                front9: front9?.team2 ?? "-",
+                back9: back9?.team2 ?? "-",
+                total:
+                  (typeof front9?.team2 === "number" ? front9.team2 : 0) +
+                  (typeof back9?.team2 === "number" ? back9.team2 : 0)
+              }
+
+              
+            };
+          }
+
+      if (matchType === "teamMatchFront9" || matchType === "teamMatchBack9") {
+        const holesToCheck =
+          matchType === "teamMatchFront9"
+            ? [...Array(9).keys()]
+            : [...Array(9).keys()].map(i => i + 9);
+      
+        const result = getTeamScore(teamPlayers.team1, teamPlayers.team2, holesToCheck);
+      
+        const teamNames = [
+          matchData.teams.find(team =>
+            team.players.some(p => p.name === teamPlayers.team1[0])
+          )?.name || "Team A",
+          matchData.teams.find(team =>
+            team.players.some(p => p.name === teamPlayers.team2[0])
+          )?.name || "Team B",
+        ];
+      
+        teamPoints = {
+          [teamNames[0]]: {
+            total: result?.team1 ?? "-"
+          },
+          [teamNames[1]]: {
+            total: result?.team2 ?? "-"
+          }
+        };
+      }
+      
+      
+      if (matchType === "individualMatch9") {
+        const front9Pairings = selectedMatch?.pairings?.front9 || [];
+        const back9Pairings = selectedMatch?.pairings?.back9 || [];
+
+        if (!Array.isArray(front9Pairings) || front9Pairings.length === 0) {
+          console.warn("No pairings found for front9");
+          teamPoints = null;
+        } else {
+          const sumMatchPoints = (pairingsArr, holesToCheck) => {
+            const matchResults = getIndividualMatchScore(pairingsArr, holesToCheck);
+            return pairingsArr.reduce(
+              (totals, pair, index) => {
+                totals.teamA += matchResults[index]?.pointsA ?? 0;
+                totals.teamB += matchResults[index]?.pointsB ?? 0;
+                return totals;
+              },
+              { teamA: 0, teamB: 0 }
+            );
+          };
+
+          const front9Totals = sumMatchPoints(front9Pairings, [...Array(9).keys()]);
+          const back9Totals = Array.isArray(back9Pairings) && back9Pairings.length > 0
+            ? sumMatchPoints(back9Pairings, [...Array(9).keys()].map((i) => i + 9))
+            : { teamA: 0, teamB: 0 };
+
+          const teamAName =
+            selectedMatch?.front9?.teamA ||
+            selectedMatch?.back9?.teamA ||
+            "Team A";
+          const teamBName =
+            selectedMatch?.front9?.teamB ||
+            selectedMatch?.back9?.teamB ||
+            "Team B";
+
+          teamPoints = {
+            [teamAName]: {
+              front9: front9Totals.teamA,
+              back9: back9Totals.teamA,
+              total: front9Totals.teamA + back9Totals.teamA
+            },
+            [teamBName]: {
+              front9: front9Totals.teamB,
+              back9: back9Totals.teamB,
+              total: front9Totals.teamB + back9Totals.teamB
+            }
+          };
+        }
+      }
+      
+      
+
+      if (matchType === "individualMatch18") {
+        const pairings = selectedMatch?.pairings || [];
+      
+        // Guard: if no pairings, skip scoring
+        if (!Array.isArray(pairings) || pairings.length === 0) {
+          console.warn("No pairings found for individualMatch18");
+          teamPoints = null;
+        } else {
+          const holesToCheck = [...Array(18).keys()];
+          const matchResults = getIndividualMatchScore(pairings, holesToCheck);
+      
+          let teamATotal = 0;
+          let teamBTotal = 0;
+      
+          pairings.forEach((pair, i) => {
+            const pointsA = matchResults[i]?.pointsA ?? 0;
+            const pointsB = matchResults[i]?.pointsB ?? 0;
+      
+            teamATotal += pointsA;
+            teamBTotal += pointsB;
+          });
+      
+          const teamAName = selectedMatch?.teamA || "Team A";
+          const teamBName = selectedMatch?.teamB || "Team B";
+      
+          teamPoints = {
+            [teamAName]: { total: teamATotal },
+            [teamBName]: { total: teamBTotal }
+          };
+        }
+      }
+      
+      
+      const scoresWithTeamNames = {};
+
+      localPlayers.forEach(player => {
+        const name = player.name;
+        if (!scores[name]) return;
+        scoresWithTeamNames[name] = {
+          ...scores[name],
+          teamName: player?.teamName || getTeamNameFromMatchData(name)
+        };        
+      });
+
+      await setDoc(scoresRef, {
+        scores: scoresWithTeamNames,
+        ...(teamPoints && { teamPoints })
+      }, { merge: true });
+
+
+      
+    } catch (error) {
+      console.error("Error saving scores:", error);
+    }
+  };
+
+  const exportToExcel = () => {
+    const wb = XLSX.utils.book_new();
+  
+    const wsData = [
+      ["Hole", "Yards", "Par", "HCP", ...localPlayers.map(p => p.name)],
+    ];
+  
+    holes.forEach((hole, idx) => {
+      const row = [
+        idx + 1,
+        hole.yardage,
+        hole.par,
+        hole.handicap,
+        ...localPlayers.map(p => {
+          const gross = scores[p.name]?.[idx]?.gross ?? "";
+          const net = scores[p.name]?.[idx]?.net ?? "";
+          return `${gross}${net !== "" ? ` (${net})` : ""}`;
+        })
+      ];
+      wsData.push(row);
+    });
+  
+    // Add total scores row
+    const totalRow = [
+      "Total",
+      "", "", "",
+      ...localPlayers.map(p =>
+        `${getGrossTotal(p.name)} / ${getNetTotal(p.name, parseInt(p.handicap))}`
+      )
+    ];
+    wsData.push([]);
+    wsData.push(totalRow);
+  
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    XLSX.utils.book_append_sheet(wb, ws, "Scorecard");
+  
+    XLSX.writeFile(wb, `scorecard_${selectedDate}_${matchType}.xlsx`);
+  };
+
+  const exportScorecardAsImage = async () => {
+    const scorecard = scorecardRef.current;
+    if (!scorecard) return;
+  
+    const scrollableBody = scorecard.querySelector(".scrollable-body");
+    if (!scrollableBody) return;
+  
+    // Save original styles
+    const originalScrollOverflow = scrollableBody.style.overflow;
+    const originalScrollMaxHeight = scrollableBody.style.maxHeight;
+  
+    // Expand scrollable content
+    scrollableBody.style.overflow = "visible";
+    scrollableBody.style.maxHeight = "none";
+  
+    try {
+      const canvas = await html2canvas(scorecard, {
+        scale: 2,
+        useCORS: true,
+        windowWidth: scorecard.scrollWidth
+      });
+  
+      const link = document.createElement("a");
+      link.download = `scorecard_${selectedDate}_${matchType}.png`;
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+    } catch (error) {
+      console.error("Failed to export image:", error);
+    } finally {
+      // Restore original scroll
+      scrollableBody.style.overflow = originalScrollOverflow;
+      scrollableBody.style.maxHeight = originalScrollMaxHeight;
+    }
+  };
+
+  const bestBallStatusBlock = (() => {
+    if (!(matchType === "bestBall1" || matchType === "bestBall2") || !matchData?.bestBallMatches) return null;
+
+    const matchIndex = matchType === "bestBall1" ? 0 : 1;
+    const matchTeams = matchData.bestBallMatches[matchIndex]?.matchTeams;
+    if (!matchTeams || matchTeams.length < 2) return null;
+
+    const teamNames = [matchTeams[0].teamName, matchTeams[1].teamName];
+    const front9 = getTeamScore(teamPlayers.team1, teamPlayers.team2, [...Array(9).keys()]);
+    const back9 = getTeamScore(teamPlayers.team1, teamPlayers.team2, [...Array(9).keys()].map(i => i + 9));
+
+    return (
+      <div className="match-status">
+        <h4>
+          Front 9 – {teamNames[0]}: {front9 ? front9.team1 : "-"} | {teamNames[1]}: {front9 ? front9.team2 : "-"}
+        </h4>
+        <h4>
+          Back 9 – {teamNames[0]}: {back9 ? back9.team1 : "-"} | {teamNames[1]}: {back9 ? back9.team2 : "-"}
+        </h4>
+      </div>
+    ); 
+    
+    
+  })();
+
+  const teamBestBallStatusBlock = (() => {
+    if (matchType !== "teamBestBall") return null;
+
+    const holesToCheck = visibleHalf === "front"
+      ? [...Array(9).keys()]
+      : [...Array(9).keys()].map((i) => i + 9);
+    const teamEntries = getTeamBestBallTeams();
+
+    if (teamEntries.length === 0) return null;
+
+    return (
+      <div className="match-status" style={{ marginBottom: "10px" }}>
+        {teamEntries.map((teamEntry) => (
+          <p key={teamEntry.teamName}>
+            <strong>{teamEntry.teamName}:</strong> {formatToPar(getTeamBestBallToPar(teamEntry.players || [], holesToCheck))}
+          </p>
+        ))}
+      </div>
+    );
+  })();
+
+  const matchPlayStatusBlock = (() => {
+    if (!["teamMatch18", "teamMatch9", "teamMatchFront9", "teamMatchBack9", "individualMatch18"].includes(matchType)) return null;
+  
+    let result = null;
+  
+    if (matchType === "teamMatch18") {
+      const allHoles = [...Array(18).keys()];
+      result = getTeamScore(teamPlayers.team1, teamPlayers.team2, allHoles);
+    } else if (matchType.startsWith("teamMatch")) {
+      const holes = visibleHalf === "front" ? [...Array(9).keys()] : [...Array(9).keys()].map(i => i + 9);
+      result = getTeamScore(teamPlayers.team1, teamPlayers.team2, holes);
+    } else if (matchType.startsWith("individualMatch")) {
+      const pairings = selectedMatch?.pairings?.[visibleHalf] || [];
+      const holes = visibleHalf === "front" ? [...Array(9).keys()] : [...Array(9).keys()].map(i => i + 9);
+      result = getIndividualMatchScore(pairings, holes);
+    }
+  
+    if (!result) return null;
+  
+    const teamNames = matchType.startsWith("team")
+      ? [
+          matchData.teams.find(t => t.players.some(p => p.name === teamPlayers.team1[0]))?.name || "Team A",
+          matchData.teams.find(t => t.players.some(p => p.name === teamPlayers.team2[0]))?.name || "Team B"
+        ]
+      : ["Team A", "Team B"];
+  
+    return (
+      <div className="match-status" style={{ marginBottom: "10px" }}>
+        <strong>{teamNames[0]}: {result.team1} | {teamNames[1]}: {result.team2}</strong>
+      </div>
+    );
+  })();
+  
+
+  return (
+    <div className="admin-page-shell score-entry-page-shell">
+      <section className="admin-hero-card compact player-select-hero">
+        <div className="admin-hero-copy">
+          <p className="player-select-hero-intro">{selectedMatch?.matchLabel || "Match Scorecard"}</p>
+          <h2>{matchData.course.course_name} • {matchData.teeBox.tee_name} • {matchData.teeBox.total_yards} yards</h2>
+        </div>
+      </section>
+
+      <section className="admin-section-card score-entry-section-card" ref={scorecardRef}>
+
+      {bestBallStatusBlock}
+      {teamBestBallStatusBlock}
+
+      
+{matchType === "stableford" && teamPoints && (
+  <>
+    <h4>🏆 Stableford Team Points</h4>  
+        <div className="stableford-team-grid">
+          {Object.entries(teamPoints).map(([teamName, value]) => (
+            <div key={teamName} className={`team-score-box ${
+              teamName === "Ball Busterz" ? "team-red" :
+              teamName === "Golden Tees" ? "team-gold" :
+              teamName === "Black Tee Titans" ? "team-black" :
+              teamName === "Just the Tips" ? "team-blue" : ""
+            }`}>
+              <span className="team-name">{teamName}: </span>
+              <span className="team-points">{value.total} pts</span>
+            </div>
+          ))}
+        </div>
+        </>
+      )}
+      
+
+      {matchType === "stableford" && (
+        <div className="stableford-breakdown-grid">
+          <div><strong>+2 = 0</strong> / +1 = +0.5</div>
+          <div><strong>E = +1</strong> / -1 = +2</div>
+          <div><strong>-2 = +3</strong> / -3 = +3</div>
+          <div><strong>0.5–6 pts:</strong> 0.5 team point</div>
+          <div><strong>6.5–9 pts:</strong> 1 team point</div>
+          <div><strong>9.5–12 pts:</strong> 1.5 team point</div>
+          <div><strong>12.5–15 pts:</strong> 2 team points</div>
+          <div><strong>15.5–18 pts:</strong> 2.5 team points</div>
+          <div><strong>18.5+ pts:</strong> 3 team points</div>
+        </div>
+      )}
+
+<div className="score-entry-toggle-row">
+  <button
+    onClick={() => {
+      setVisibleHalf("front");
+      setScorecardTab("front9");  // 🧠 this triggers the player order change
+    }}
+    className={`score-entry-toggle-button ${visibleHalf === "front" ? "active" : ""}`}
+  >
+    Front 9
+  </button>
+  <button
+    onClick={() => {
+      setVisibleHalf("back");
+      setScorecardTab("back9");  // 🧠 switch to back 9 players
+    }}
+    className={`score-entry-toggle-button ${visibleHalf === "back" ? "active" : ""}`}
+  >
+    Back 9
+  </button>
+</div>
+
+
+{matchPlayStatusBlock}
+
+{matchType === "individualMatch9" && selectedMatch?.pairings?.[scorecardTab] && (
+  <div className="match-status" style={{ marginBottom: "10px" }}>
+    <h4>{scorecardTab === "front9" ? "Front 9 Match Scores" : "Back 9 Match Scores"}</h4>
+    {getIndividualMatchScore(
+      Object.values(selectedMatch.pairings[scorecardTab]),
+      scorecardTab === "front9" ? [...Array(9).keys()] : [...Array(9).keys()].map(i => i + 9)
+    ).map((match, idx) => (
+      <p key={idx}>
+        {match.playerA} vs {match.playerB}: {match.pointsA} - {match.pointsB}
+      </p>
+    ))}
+  </div>
+)}
+
+
+    <div className="scorecard-wrapper">
+      <table border="1" className="header-table">
+      <colgroup>
+        <col className="narrow-column" />
+        <col className="narrow-column" />
+        <col className="narrow-column" />
+        <col className="narrow-column" />
+        {localPlayers.map((_, idx) => (
+          <col key={idx} className="player-column" />
+        ))}
+      </colgroup>
+
+        <thead>
+          <tr>
+            <th colSpan="4" style={{ textAlign: 'right' }}>Total:</th>
+            {localPlayers.map((p, idx) => (
+              <th key={idx} className="player-total">
+                {getGrossTotal(p.name)} / {getNetTotal(p.name, parseInt(p.handicap))}
+                {matchType === "stableford" && ` / ${getStablefordPoints(p.name)} pts`}
+              </th>
+            ))}
+          </tr>
+
+          <tr>
+            <th>Hole</th>
+            <th>Yrds</th>
+            <th>Par</th>
+            <th>HCP</th>
+            {localPlayers.map((p, idx) => {
+              let matchupLabel = "";
+
+              if (matchType === "individualMatch9") {
+                const { front9, back9 } = getMatchPairings() || { front9: [], back9: [] };
+              
+                const currentPairs = scorecardTab === "front9" ? front9 : back9;
+                const match = currentPairs.find(pair => pair.playerA === p.name || pair.playerB === p.name);
+              
+                if (match) {
+                  const opponent = match.playerA === p.name ? match.playerB : match.playerA;
+                  matchupLabel = `vs ${opponent}`;
+                }
+              }
+              
+
+              return (
+                <th
+                key={idx}
+                className="player-name-header"
+                style={{
+                  backgroundColor: p.teamColor,
+                  color: getContrastTextColor(p.teamColor)
+                }}
+                >
+                  {p.name}
+                  {matchType === "individualMatch9" && (
+                    <div style={{ fontSize: "0.65em", fontWeight: "normal" }}>{matchupLabel}</div>
+                  )}
+                </th>
+
+              );
+            })}
+          </tr>
+
+        </thead>
+        </table>
+          {/* Table 2: Scrollable body */}
+        <div className="scrollable-body">
+          <table className="body-table">
+          <colgroup>
+            <col className="narrow-column" />
+            <col className="narrow-column" />
+            <col className="narrow-column" />
+            <col className="narrow-column" />
+            {localPlayers.map((_, idx) => (
+              <col key={idx} className="player-column" />
+            ))}
+          </colgroup>
+
+          <tbody>
+            {holes
+              .filter((_, idx) => visibleHalf === "front" ? idx < 9 : idx >= 9)
+              .map((hole, idx) => {
+                const realIndex = visibleHalf === "front" ? idx : idx + 9;
+
+                return (
+                  <tr key={realIndex}>
+
+
+                    <td className="narrow-column hole-number" onClick={() => {
+                      const imgUrl = matchData.holeImages?.[realIndex + 1];
+                      if (imgUrl) setSelectedHoleImage(imgUrl);
+                    }}>
+                      {realIndex + 1}
+                    </td>
+                    <td className="narrow-column">{hole.yardage}</td>
+                    <td className="narrow-column">{hole.par}</td>
+                    <td className="narrow-column">{hole.handicap}</td>
+                    {localPlayers.map((p) => {
+                      const gross = scores[p.name]?.[realIndex]?.gross ?? "";
+                      const net = scores[p.name]?.[realIndex]?.net ?? "";
+
+                      let highlightClass = "";
+                      if (matchType === "bestBall1" || matchType === "bestBall2") {
+                        const team1Scores = teamPlayers.team1
+                          .map(name => ({ name, net: scores[name]?.[realIndex]?.net }))
+                          .filter(entry => entry.net != null && !isNaN(entry.net));
+                        const team2Scores = teamPlayers.team2
+                          .map(name => ({ name, net: scores[name]?.[realIndex]?.net }))
+                          .filter(entry => entry.net != null && !isNaN(entry.net));
+
+                        const team1Best = Math.min(...team1Scores.map(e => e.net));
+                        const team2Best = Math.min(...team2Scores.map(e => e.net));
+
+                        let winningTeam = null;
+                        if (team1Best < team2Best) winningTeam = "team1";
+                        else if (team2Best < team1Best) winningTeam = "team2";
+
+                        const isWinner = (
+                          (winningTeam === "team1" && teamPlayers.team1.includes(p.name)) ||
+                          (winningTeam === "team2" && teamPlayers.team2.includes(p.name))
+                        );
+
+                        if (isWinner) {
+                          const teamName = p.teamName || "";
+                          highlightClass =
+                            teamName === "Ball Busterz" ? "highlight-red" :
+                            teamName === "Golden Tees" ? "highlight-gold" :
+                            teamName === "Black Tee Titans" ? "highlight-black" :
+                            teamName === "Just the Tips" ? "highlight-blue" : "";
+                        }
+                      }
+
+                      let points = "";
+                      if (matchType === "stableford" && net !== "") {
+                        const diff = net - hole.par;
+                        if (diff >= 2) points = -1;
+                        else if (diff === 1) points = 0;
+                        else if (diff === 0) points = 0.5;
+                        else if (diff === -1) points = 1;
+                        else if (diff === -2) points = 2;
+                        else if (diff === -3) points = 3;
+                        else if (diff <= -4) points = 4;
+                      }
+
+                      return (
+                        <td
+                          key={p.name}
+                          style={{
+                            backgroundColor: (() => {
+                              if (["teamMatch18", "teamMatch9", "teamMatchFront9", "teamMatchBack9"].includes(matchType)) {
+                                const winner = getMatchPlayHoleWinner(realIndex);
+                                if (!winner || winner === "tie") return "white";
+                            
+                                const winningTeam = winner === "team1" ? teamPlayers.team1 : teamPlayers.team2;
+                                if (winningTeam.includes(p.name)) {
+                                  const teamColor = p.teamColor || "#cccccc";
+                                  return lightenColor(teamColor, 0.75);
+                                }
+                              }
+                            
+                              if (matchType === "individualMatch9") {
+                                const holeWinners = getIndividualHoleWinners(realIndex);
+                                if (holeWinners.includes(p.name)) {
+                                  const teamColor = p.teamColor || "#cccccc";
+                                  return lightenColor(teamColor, 0.75);
+                                }
+                              }
+
+                              if (matchType === "teamBestBall") {
+                                const countingPlayers = getBestBallHoleWinners(realIndex);
+                                if (countingPlayers.includes(p.name)) {
+                                  const teamColor = p.teamColor || "#cccccc";
+                                  return lightenColor(teamColor, 0.75);
+                                }
+                              }
+                            
+                              return "white";
+                            })()
+                          }}
+                        >
+
+                          <div className="score-entry-input-row">
+                            <button
+                              type="button"
+                              className={`score-picker-button ${gross === "" ? "empty" : ""}`}
+                              onClick={() =>
+                                setActiveScorePicker({
+                                  playerName: p.name,
+                                  holeIndex: realIndex,
+                                })
+                              }
+                            >
+                              {gross === "" ? "Tap" : gross}
+                            </button>
+                          </div>
+                          <div style={{ fontSize: "1.0em", color: "black" }}>
+                            {net !== "" && <>Net: {net}</>}
+                            <br />
+                            {(() => {
+                              const playerHandicap = parseInt(p.handicap || 0);
+                              const holeHcp = holes[realIndex]?.handicap || 0;
+                              let strokesGiven = 0;
+                              if (playerHandicap >= holeHcp) strokesGiven = 1;
+                              if (playerHandicap >= holeHcp + 18) strokesGiven = 2;
+                              return <span style={{ fontSize: "0.65em" }}>Strokes: {strokesGiven}</span>;
+                            })()}
+                            {matchType === "stableford" && net !== "" && (
+                              <>
+                                <br />
+                                Pts: {points}
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+          </tbody>
+
+      </table>
+      </div>
+      {selectedHoleImage && (
+        <div className="hole-image-overlay" onClick={() => setSelectedHoleImage(null)}>
+          <div className="hole-image-modal">
+            <img src={selectedHoleImage} alt="Hole view" />
+            <button onClick={() => setSelectedHoleImage(null)}>Return to Match</button>
+          </div>
+        </div>
+      )}
+
+      {activeScorePicker && (
+        <div className="score-picker-overlay" onClick={() => setActiveScorePicker(null)}>
+          <div className="score-picker-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="score-picker-header">
+              <h3>
+                {`Hole ${activeScorePicker.holeIndex + 1}`}
+                <span className="score-picker-hole-meta">
+                  {` • Par ${holes[activeScorePicker.holeIndex]?.par ?? "-"}`}
+                </span>
+              </h3>
+              <p className="score-picker-player-name">
+                {activePickerPlayer?.name || activeScorePicker.playerName}
+              </p>
+            </div>
+
+            <div className="score-picker-grid">
+              {Array.from({ length: 9 }, (_, index) => index + 1).map((scoreValue) => (
+                <button
+                  key={scoreValue}
+                  type="button"
+                  className="score-picker-option"
+                  onClick={() => {
+                    updateScore(activeScorePicker.playerName, activeScorePicker.holeIndex, String(scoreValue));
+                    setActiveScorePicker(null);
+                  }}
+                >
+                  {scoreValue}
+                </button>
+              ))}
+            </div>
+
+            <div className="score-picker-single-row">
+              <button
+                type="button"
+                className="score-picker-option score-picker-option-single"
+                onClick={() => {
+                  updateScore(activeScorePicker.playerName, activeScorePicker.holeIndex, "10");
+                  setActiveScorePicker(null);
+                }}
+              >
+                10
+              </button>
+            </div>
+
+            <div className="score-picker-actions">
+              <button
+                type="button"
+                className="admin-secondary-button"
+                onClick={() => {
+                  updateScore(activeScorePicker.playerName, activeScorePicker.holeIndex, "");
+                  setActiveScorePicker(null);
+                }}
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                className="admin-primary-button"
+                onClick={() => setActiveScorePicker(null)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      </div>
+
+      </section>
+    </div>
+  );
+}
+
+export default ScoreEntry;
