@@ -1,7 +1,16 @@
 /* MapboxMap.css */
 .map-container {
-  height: 600px;
+  height: min(60vh, 600px);
+  min-height: 320px;
   width: 100%;
   border: 1px solid #ccc;
   border-radius: 8px;
+}
+
+.map-helper-text {
+  margin: 10px 0 0;
+  font-size: 0.92rem;
+  font-weight: 600;
+  text-align: center;
+  color: #071f3d;
 }

@@ -2245,6 +2245,8 @@ input[type=number] {
   padding: 20px;
   width: 90%;
   max-width: 800px;
+  max-height: 90vh;
+  overflow-y: auto;
   position: relative;
 }
 

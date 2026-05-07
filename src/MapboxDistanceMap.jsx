@@ -5,11 +5,14 @@ import './MapboxMap.css';
 const mapboxToken = import.meta.env.VITE_MAPBOX_TOKEN;
 mapboxgl.accessToken = mapboxToken || '';
 
+const DEFAULT_MAP_CENTER = { lat: 39.8283, lng: -98.5795 };
+
 function MapboxDistanceMap() {
   const mapContainer = useRef(null);
   const map = useRef(null);
   const userLocationRef = useRef(null); // ✅ useRef for guaranteed access
   const [distance, setDistance] = useState(null);
+  const [locationMessage, setLocationMessage] = useState("");
 
   const metersToYards = (m) => (m * 1.09361).toFixed(0);
 
@@ -61,35 +64,24 @@ function animateBall(map, lineCoords) {
   step();
 }
 
-
   useEffect(() => {
-    if (map.current) return;
+    if (map.current || !mapContainer.current) return;
 
     if (!mapboxToken) {
       console.error("Missing VITE_MAPBOX_TOKEN for MapboxDistanceMap.");
+      setLocationMessage("Map token is missing.");
       return;
     }
 
-    if (!navigator.geolocation) {
-      alert("Geolocation is not supported by your browser.");
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition((pos) => {
-      const { latitude, longitude } = pos.coords;
-      const userCoords = { lat: latitude, lng: longitude };
-      userLocationRef.current = userCoords;
-
-      map.current = new mapboxgl.Map({
-        container: mapContainer.current,
-        style: 'mapbox://styles/mapbox/satellite-streets-v12',
-        center: [longitude, latitude],
-        zoom: 17,
+    const ensureMapResized = () => {
+      requestAnimationFrame(() => {
+        map.current?.resize();
+        setTimeout(() => map.current?.resize(), 250);
       });
+    };
 
-      new mapboxgl.Marker({ color: 'blue' })
-        .setLngLat([longitude, latitude])
-        .addTo(map.current);
+    const attachMapInteractions = () => {
+      if (!map.current || map.current._distanceClickHandlerAttached) return;
 
       map.current.on('click', (e) => {
         const { lng, lat } = e.lngLat;
@@ -106,12 +98,10 @@ function animateBall(map, lineCoords) {
         const distYards = metersToYards(distMeters);
         setDistance(distYards);
 
-        // Remove old marker
         if (map.current._clickMarker) {
           map.current._clickMarker.remove();
         }
 
-        // Add new ❌ marker
         const el = document.createElement('div');
         el.innerHTML = 'o';
         el.style.fontSize = '20px';
@@ -125,56 +115,128 @@ function animateBall(map, lineCoords) {
 
         map.current._clickMarker = redMarker;
 
-      // ➕ Draw a line to the clicked point
-      const lineCoords = [
-        [userLocationRef.current.lng, userLocationRef.current.lat],
-        [lng, lat]
-      ];
+        const lineCoords = [
+          [userLocationRef.current.lng, userLocationRef.current.lat],
+          [lng, lat]
+        ];
 
-      const lineId = 'distance-line';
+        const lineId = 'distance-line';
 
-      if (map.current.getSource(lineId)) {
-        map.current.removeLayer(lineId);
-        map.current.removeSource(lineId);
+        if (map.current.getSource(lineId)) {
+          map.current.removeLayer(lineId);
+          map.current.removeSource(lineId);
+        }
+
+        map.current.addSource(lineId, {
+          type: 'geojson',
+          data: {
+            type: 'Feature',
+            geometry: {
+              type: 'LineString',
+              coordinates: lineCoords
+            }
+          }
+        });
+
+        map.current.addLayer({
+          id: lineId,
+          type: 'line',
+          source: lineId,
+          layout: {
+            'line-cap': 'round',
+            'line-join': 'round'
+          },
+          paint: {
+            'line-color': 'red',
+            'line-width': 5,
+            'line-blur': 3,
+            'line-opacity': 1.0,
+          }
+        });
+
+        animateBall(map.current, lineCoords);
+      });
+
+      map.current._distanceClickHandlerAttached = true;
+    };
+
+    const initializeMap = ({ lat, lng }, zoomLevel = 17) => {
+      if (map.current) return;
+
+      map.current = new mapboxgl.Map({
+        container: mapContainer.current,
+        style: 'mapbox://styles/mapbox/satellite-streets-v12',
+        center: [lng, lat],
+        zoom: zoomLevel,
+      });
+
+      map.current.on('load', ensureMapResized);
+      ensureMapResized();
+      attachMapInteractions();
+    };
+
+    const updateUserLocation = ({ lat, lng }) => {
+      userLocationRef.current = { lat, lng };
+      setLocationMessage("");
+
+      if (!map.current) {
+        initializeMap({ lat, lng }, 17);
+      } else {
+        map.current.flyTo({ center: [lng, lat], zoom: 17, essential: true });
       }
 
-      map.current.addSource(lineId, {
-        type: 'geojson',
-        data: {
-          type: 'Feature',
-          geometry: {
-            type: 'LineString',
-            coordinates: lineCoords
-          }
-        }
-      });
+      if (!map.current._userMarker) {
+        map.current._userMarker = new mapboxgl.Marker({ color: 'blue' })
+          .setLngLat([lng, lat])
+          .addTo(map.current);
+      } else {
+        map.current._userMarker.setLngLat([lng, lat]);
+      }
+    };
 
-      map.current.addLayer({
-        id: lineId,
-        type: 'line',
-        source: lineId,
-        layout: {
-          'line-cap': 'round',
-          'line-join': 'round'
-        },
-        paint: {
-          'line-color': 'red',     // Bright neon cyan laser
-          'line-width': 5,             // Thicker beam
-          'line-blur': 3,              // Glow effect
-          'line-opacity': 1.0,         // Slight transparency
-          
-        }
-        
-      });
+    initializeMap(DEFAULT_MAP_CENTER, 3.4);
 
-      animateBall(map.current, lineCoords);
-    });
-  });
+    if (!navigator.geolocation) {
+      setLocationMessage("Location is not supported on this device.");
+      return () => {
+        if (animationMarker) animationMarker.remove();
+        cancelAnimationFrame(animationFrame);
+        map.current?.remove();
+        map.current = null;
+      };
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords;
+        updateUserLocation({ lat: latitude, lng: longitude });
+      },
+      (error) => {
+        console.error("Geolocation error in MapboxDistanceMap:", error);
+        setLocationMessage("Allow location access to center the GPS map on your position.");
+        ensureMapResized();
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 60000,
+      }
+    );
+
+    return () => {
+      if (animationMarker) animationMarker.remove();
+      cancelAnimationFrame(animationFrame);
+      map.current?.remove();
+      map.current = null;
+    };
   }, []);
 
   return (
     <div>
       <div ref={mapContainer} className="map-container" />
+      {locationMessage && (
+        <p className="map-helper-text">{locationMessage}</p>
+      )}
       {distance && (
         <p style={{ marginTop: '10px', fontWeight: 'bold', textAlign: 'center' }}>
           📏 Distance to point: {distance} yards
