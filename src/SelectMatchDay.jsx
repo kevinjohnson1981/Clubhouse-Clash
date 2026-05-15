@@ -43,9 +43,9 @@ function SelectMatchDay({ onSelectMatchDay, onAdmin, tournamentId, tournamentNam
       <section className="admin-hero-card compact player-select-hero">
         <div className="admin-hero-copy">
           <p className="player-select-hero-intro">
-            {tournamentName ? `Welcome to ${tournamentName}.` : "Welcome to the tournament."}
+            Welcome to
           </p>
-          <h2>Select a match day</h2>
+          <h2>{tournamentName || "Tournament"}</h2>
         </div>
       </section>
 
