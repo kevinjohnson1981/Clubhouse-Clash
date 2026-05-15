@@ -502,6 +502,7 @@ select {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  margin-bottom: 1px;
 }
 
 .score-picker-button {
@@ -652,9 +653,17 @@ input[type=number] {
 
 .player-total {
   background-color: #d2d2d2; /* light green highlight */
-  font-weight: bold;
-  font-size: 14px;
+  font-weight: 700;
+  font-size: 11px !important;
+  line-height: 1.2 !important;
   padding: 4px;
+}
+
+.header-table thead tr:first-child th {
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  line-height: 1.2 !important;
+  white-space: normal;
 }
 
 
@@ -756,10 +765,18 @@ input[type=number] {
 .scorecard-wrapper {
   width: 100%;
   overflow: hidden;
-  border-radius: 18px;
-  border: 1px solid color-mix(in srgb, var(--theme-accent, #2f7b49) 18%, transparent 82%);
-  background: color-mix(in srgb, var(--theme-card, #f5efe3) 48%, white 52%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  border-radius: 20px;
+  border: 2px solid rgba(7, 31, 61, 0.22);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--theme-card, #f5efe3) 58%, white 42%),
+    color-mix(in srgb, var(--theme-bg, #ddd1bb) 18%, white 82%)
+  );
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.72),
+    0 14px 26px color-mix(in srgb, var(--theme-accent, #2f7b49) 10%, transparent 90%);
+  padding: 0;
+  box-sizing: border-box;
 }
 
 .scorecard-wrapper .narrow-column {
@@ -780,9 +797,12 @@ input[type=number] {
 
 .header-table {
   width: 100%;
-  border: 2px solid black;
-  background-color: rgb(255, 255, 255);
+  border: 0;
+  background-color: color-mix(in srgb, var(--theme-card, #ffffff) 90%, white 10%);
   table-layout: fixed;
+  border-radius: 0;
+  overflow: hidden;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82);
 }
 
 .scrollable-body {
@@ -801,17 +821,44 @@ input[type=number] {
 .body-table {
   width: 100%;
   border-collapse: collapse;
-  background-color: rgb(255, 255, 255);
+  background-color: color-mix(in srgb, var(--theme-card, #ffffff) 90%, white 10%);
   table-layout: fixed;
+  border-radius: 0;
+  overflow: hidden;
 }
 
 .header-table th,
 .body-table td {
-  padding: 5px;
+  padding: 3px 4px;
   font-size: 12px;
-  border: 2px solid rgb(0, 0, 0);
+  border: 2px solid rgba(7, 31, 61, 0.22);
   text-align: center;
   color: #000;
+}
+
+.scorecard-wrapper .header-table th:nth-child(-n + 4) {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  line-height: 1.05;
+  padding: 4px 0;
+  white-space: nowrap;
+}
+
+.header-table thead tr:first-child th:first-child {
+  border-top-left-radius: 18px;
+}
+
+.header-table thead tr:first-child th:last-child {
+  border-top-right-radius: 18px;
+}
+
+.body-table tbody tr:last-child td:first-child {
+  border-bottom-left-radius: 18px;
+}
+
+.body-table tbody tr:last-child td:last-child {
+  border-bottom-right-radius: 18px;
 }
 
 .admin-button {
@@ -2432,22 +2479,31 @@ input[type=number] {
   border: 1px solid color-mix(in srgb, var(--theme-accent, #2f7b49) 28%, transparent 72%);
   background: linear-gradient(
     180deg,
-    color-mix(in srgb, var(--theme-card, #f5efe3) 68%, white 32%),
-    color-mix(in srgb, var(--theme-bg, #ddd1bb) 26%, white 74%)
+    color-mix(in srgb, var(--theme-card, #f5efe3) 58%, white 42%),
+    color-mix(in srgb, var(--theme-bg, #ddd1bb) 18%, white 82%)
   );
   border-radius: 20px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    0 14px 26px color-mix(in srgb, var(--theme-accent, #2f7b49) 10%, transparent 90%);
   width: 100%;
   max-width: 100%;
   margin: 0 auto;
+  padding: 10px;
+  box-sizing: border-box;
 }
 
 .leaderboard-table {
   width: 100%;
   min-width: 0;
-  background: transparent;
+  background: color-mix(in srgb, var(--theme-card, #ffffff) 88%, white 12%);
   margin: 0 auto;
   table-layout: auto;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.78),
+    0 1px 0 rgba(7, 31, 61, 0.04);
 }
 
 .leaderboard-table th:first-child,
@@ -2487,7 +2543,11 @@ input[type=number] {
 }
 
 .leaderboard-table thead th {
-  background: linear-gradient(180deg, #29573a, #1f442d);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--theme-accent, #2f7b49) 90%, black 10%),
+    color-mix(in srgb, var(--theme-accent, #2f7b49) 68%, #0b1d38 32%)
+  );
   color: #f6f1e7;
   font-size: 0.78rem;
   font-weight: 800;
@@ -2498,7 +2558,7 @@ input[type=number] {
 .leaderboard-table th,
 .leaderboard-table td {
   padding: 12px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.92);
 }
 
 .leaderboard-table td {

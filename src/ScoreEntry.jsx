@@ -1431,7 +1431,7 @@ function ScoreEntry({ selectedDate, tournamentId, matchType, players, selectedMa
                               {gross === "" ? "Tap" : gross}
                             </button>
                           </div>
-                          <div style={{ fontSize: "1.0em", color: "black" }}>
+                          <div style={{ fontSize: "0.95em", color: "black", lineHeight: 1.05 }}>
                             {net !== "" && <>Net: {net}</>}
                             <br />
                             {(() => {

@@ -102,7 +102,7 @@ function SetupOptions({
                       value={playersPerTeam}
                       onChange={(e) => setPlayersPerTeam(parseInt(e.target.value, 10))}
                     >
-                      {[2, 3, 4, 5, 6, 7, 8].map((n) => (
+                      {Array.from({ length: 14 }, (_, index) => index + 2).map((n) => (
                         <option key={n} value={n}>{n}</option>
                       ))}
                     </select>
