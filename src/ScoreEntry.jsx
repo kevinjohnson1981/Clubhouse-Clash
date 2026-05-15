@@ -1185,15 +1185,15 @@ function ScoreEntry({ selectedDate, tournamentId, matchType, players, selectedMa
 
       {matchType === "stableford" && (
         <div className="stableford-breakdown-grid">
-          <div><strong>+2 = 0</strong> / +1 = +0.5</div>
-          <div><strong>E = +1</strong> / -1 = +2</div>
-          <div><strong>-2 = +3</strong> / -3 = +3</div>
-          <div><strong>0.5–6 pts:</strong> 0.5 team point</div>
-          <div><strong>6.5–9 pts:</strong> 1 team point</div>
-          <div><strong>9.5–12 pts:</strong> 1.5 team point</div>
-          <div><strong>12.5–15 pts:</strong> 2 team points</div>
-          <div><strong>15.5–18 pts:</strong> 2.5 team points</div>
-          <div><strong>18.5+ pts:</strong> 3 team points</div>
+          <div><strong>+2 = 0 / +1 = +0.5</strong></div>
+          <div><strong>E = +1 / -1 = +2</strong></div>
+          <div><strong>-2 = +3 / -3 = +3</strong></div>
+          <div><strong>0.5–6 pts:</strong> 0.5 team pts</div>
+          <div><strong>6.5–9 pts:</strong> 1 team pts</div>
+          <div><strong>9.5–12 pts:</strong> 1.5 team pts</div>
+          <div><strong>12.5–15 pts:</strong> 2 team pts</div>
+          <div><strong>15.5–18 pts:</strong> 2.5 team pts</div>
+          <div><strong>18.5+ pts:</strong> 3 team pts</div>
         </div>
       )}
 
@@ -1253,14 +1253,20 @@ function ScoreEntry({ selectedDate, tournamentId, matchType, players, selectedMa
             <th colSpan="4" style={{ textAlign: 'right' }}>Total:</th>
             {localPlayers.map((p, idx) => (
               <th key={idx} className="player-total">
-                {getGrossTotal(p.name)} / {getNetTotal(p.name, parseInt(p.handicap))}
-                {matchType === "stableford" && ` / ${getStablefordPoints(p.name)} pts`}
+                <span className="player-total-main">
+                  {getGrossTotal(p.name)} / {getNetTotal(p.name, parseInt(p.handicap))}
+                </span>
+                {matchType === "stableford" && (
+                  <span className="player-total-sub">
+                    Pts: {getStablefordPoints(p.name)}
+                  </span>
+                )}
               </th>
             ))}
           </tr>
 
           <tr>
-            <th>Hole</th>
+            <th>#</th>
             <th>Yrds</th>
             <th>Par</th>
             <th>HCP</th>

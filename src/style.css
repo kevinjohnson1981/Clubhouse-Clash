@@ -443,13 +443,29 @@ select {
 }
 
 .score-entry-section-card .match-status {
-  margin: 12px auto;
-  padding: 12px 14px;
+  margin: 8px auto;
+  padding: 8px 12px;
   border-radius: 16px;
   background: color-mix(in srgb, var(--theme-card, #f5efe3) 72%, white 28%);
   border: 1px solid color-mix(in srgb, var(--theme-accent, #2f7b49) 14%, transparent 86%);
   color: var(--theme-text, #173321);
   max-width: 720px;
+}
+
+.score-entry-section-card .match-status h4 {
+  margin: 0 0 4px;
+  font-size: 0.9rem;
+  line-height: 1.15;
+}
+
+.score-entry-section-card .match-status p {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.15;
+}
+
+.score-entry-section-card .match-status p + p {
+  margin-top: 2px;
 }
 
 .score-entry-toggle-row {
@@ -659,6 +675,23 @@ input[type=number] {
   padding: 4px;
 }
 
+.player-total-main,
+.player-total-sub {
+  display: block;
+}
+
+.player-total-main {
+  font-size: 11px;
+  line-height: 1.1;
+}
+
+.player-total-sub {
+  margin-top: 1px;
+  font-size: 9px;
+  line-height: 1.05;
+  font-weight: 700;
+}
+
 .header-table thead tr:first-child th {
   font-size: 11px !important;
   font-weight: 700 !important;
@@ -765,7 +798,7 @@ input[type=number] {
 .scorecard-wrapper {
   width: 100%;
   overflow: hidden;
-  border-radius: 20px;
+  border-radius: 14px;
   border: 2px solid rgba(7, 31, 61, 0.22);
   background: linear-gradient(
     180deg,
@@ -780,9 +813,9 @@ input[type=number] {
 }
 
 .scorecard-wrapper .narrow-column {
-  width: 28px;
-  min-width: 28px;
-  max-width: 28px;
+  width: 24px;
+  min-width: 24px;
+  max-width: 24px;
 }
 
 .scorecard-wrapper .header-table th,
@@ -845,20 +878,31 @@ input[type=number] {
   white-space: nowrap;
 }
 
-.header-table thead tr:first-child th:first-child {
-  border-top-left-radius: 18px;
+.scorecard-wrapper .player-name-header {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  line-height: 1.05;
+  padding: 4px 2px;
+  word-break: break-word;
 }
 
-.header-table thead tr:first-child th:last-child {
-  border-top-right-radius: 18px;
+.header-table thead tr:first-child th {
+  border-top: 0;
 }
 
-.body-table tbody tr:last-child td:first-child {
-  border-bottom-left-radius: 18px;
+.header-table th:first-child,
+.body-table td:first-child {
+  border-left: 0;
 }
 
-.body-table tbody tr:last-child td:last-child {
-  border-bottom-right-radius: 18px;
+.header-table th:last-child,
+.body-table td:last-child {
+  border-right: 0;
+}
+
+.body-table tbody tr:last-child td {
+  border-bottom: 0;
 }
 
 .admin-button {

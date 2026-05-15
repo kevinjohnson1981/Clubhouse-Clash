@@ -486,7 +486,7 @@ function TeamLeaderboard({ selectedTournamentId, selectedDate = null }) {
             <table className="header-table leaderboard-table team-leaderboard-table">
               <thead>
                 <tr>
-                  <th>Pos</th>
+                  <th>#</th>
                   <th>Team</th>
                   {days.map((day, i) => (
                     <th key={i}>{day.label}</th>
