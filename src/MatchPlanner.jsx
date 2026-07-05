@@ -543,7 +543,7 @@ const toggleTeamBestBallPlayer = (matchIndex, teamName, playerName, checked) => 
                 onClick={() => setHoles([...originalHoles])}
                 style={{ marginTop: "0.75rem" }}
               >
-                Reset to API Values
+                {selectedCourse?.source === "manual" ? "Reset to Entered Values" : "Reset to API Values"}
               </button>
             </>
           ) : (
