@@ -72,12 +72,13 @@ function TeamLeaderboard({ selectedTournamentId, selectedDate = null }) {
 
   const getDayMode = (matches = []) => {
     const hasBestBall = matches.some((match) => match.type === "teamBestBall");
+    const hasScramble = matches.some((match) => match.type === "scramble");
     const hasPointFormats = matches.some((match) =>
       ["teamMatch18", "teamMatch9", "individualMatch18", "individualMatch9", "stableford", "teamMatchFront9", "teamMatchBack9"].includes(match.type)
     );
 
-    if (hasBestBall && hasPointFormats) return "mixed";
-    if (hasBestBall) return "toPar";
+    if ((hasBestBall || hasScramble) && hasPointFormats) return "mixed";
+    if (hasBestBall || hasScramble) return "toPar";
     return "points";
   };
 
@@ -122,6 +123,53 @@ function TeamLeaderboard({ selectedTournamentId, selectedDate = null }) {
 
         const bestNet = Math.min(...bestNetCandidates);
         totalToPar += bestNet - (hole.par || 0);
+        hasScores = true;
+      });
+
+      results[teamName] = hasScores ? totalToPar : null;
+    });
+
+    return results;
+  };
+
+  const computeScrambleTotalsForDay = (dayDoc, scoreDocMap) => {
+    const holes = dayDoc?.teeBox?.holes || [];
+    const scrambleMatches = (dayDoc?.matches || []).filter((match) => match.type === "scramble");
+    const scrambleEntriesByTeam = new Map();
+
+    scrambleMatches.forEach((match) => {
+      const scoreData = scoreDocMap.get(getScoreDocId(dayDoc.date, match.type, match.matchLabel)) || null;
+      (match.scrambleTeams || []).forEach((entry) => {
+        if (!entry?.teamName || !entry?.podLabel) return;
+        const existing = scrambleEntriesByTeam.get(entry.teamName) || [];
+        existing.push({
+          podLabel: entry.podLabel,
+          scoreData,
+        });
+        scrambleEntriesByTeam.set(entry.teamName, existing);
+      });
+    });
+
+    const results = {};
+    scrambleEntriesByTeam.forEach((entries, teamName) => {
+      let totalToPar = 0;
+      let hasScores = false;
+
+      holes.forEach((hole, holeIndex) => {
+        let holeTotal = 0;
+        let holeHasScores = false;
+
+        entries.forEach(({ podLabel, scoreData }) => {
+          const podNet = scoreData?.scores?.[podLabel]?.[holeIndex]?.net;
+          if (typeof podNet !== "number") return;
+
+          holeTotal += podNet - (hole.par || 0);
+          holeHasScores = true;
+        });
+
+        if (!holeHasScores) return;
+
+        totalToPar += holeTotal;
         hasScores = true;
       });
 
@@ -178,6 +226,15 @@ function TeamLeaderboard({ selectedTournamentId, selectedDate = null }) {
         .map((entry) => ({
           label: entry.teamName,
           players: entry.players,
+        }));
+    }
+
+    if (match.type === "scramble") {
+      return (match.scrambleTeams || [])
+        .filter((entry) => entry?.podLabel && entry?.teamName)
+        .map((entry) => ({
+          label: entry.podLabel,
+          players: [entry.podLabel],
         }));
     }
 
@@ -271,7 +328,7 @@ function TeamLeaderboard({ selectedTournamentId, selectedDate = null }) {
       const scoreDocId = `scores_${selectedDayDoc.date}_${match.type}_${label}`;
       const scoreData = scoreDocMap.get(scoreDocId) || null;
       const sides = buildMatchSides(match, currentTeams);
-      const displayMode = match.type === "teamBestBall" ? "toPar" : "points";
+      const displayMode = ["teamBestBall", "scramble"].includes(match.type) ? "toPar" : "points";
 
       return {
         id: scoreDocId,
@@ -281,7 +338,7 @@ function TeamLeaderboard({ selectedTournamentId, selectedDate = null }) {
         sides: sides.map((side) => ({
           ...side,
           total:
-            match.type === "teamBestBall"
+            ["teamBestBall", "scramble"].includes(match.type)
               ? getTeamBestBallCardTotal(scoreData, side.players, selectedDayDoc.teeBox?.holes || [])
               : getTeamPointsForSide(scoreData, side.label),
         })),
@@ -328,7 +385,19 @@ function TeamLeaderboard({ selectedTournamentId, selectedDate = null }) {
       dayDefinitions.forEach(({ date, label, mode, dayDoc }) => {
         if (mode === "toPar") {
           const bestBallTotals = computeBestBallTotalsForDay(dayDoc, scoreDocMap);
-          Object.entries(bestBallTotals).forEach(([teamName, value]) => {
+          const scrambleTotals = computeScrambleTotalsForDay(dayDoc, scoreDocMap);
+          const toParTotals = { ...bestBallTotals };
+
+          Object.entries(scrambleTotals).forEach(([teamName, value]) => {
+            const existing = toParTotals[teamName];
+            if (typeof existing === "number" && typeof value === "number") {
+              toParTotals[teamName] = existing + value;
+            } else {
+              toParTotals[teamName] = value ?? existing ?? null;
+            }
+          });
+
+          Object.entries(toParTotals).forEach(([teamName, value]) => {
             rows[teamName] ??= { teamName, total: null };
             rows[teamName][label] = value;
           });

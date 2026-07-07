@@ -165,6 +165,11 @@ const getIndividualNineBackNinePlayers = (playersA = [], playersB = []) => {
 const getTeamBestBallParticipants = (match) =>
   (match.participants || []).filter((entry) => Array.isArray(entry.players) && entry.players.length > 0);
 
+const getScrambleTeams = (match) =>
+  (match.scrambleTeams || []).filter(
+    (entry) => entry?.teamName && Array.isArray(entry.players) && entry.players.length >= 2
+  );
+
 const toggleTeamBestBallPlayer = (matchIndex, teamName, playerName, checked) => {
   setMatchSetups((prev) =>
     prev.map((match, index) => {
@@ -211,6 +216,90 @@ const toggleTeamBestBallPlayer = (matchIndex, teamName, playerName, checked) => 
   );
 };
 
+const addScramblePod = (matchIndex) => {
+  setMatchSetups((prev) =>
+    prev.map((match, index) =>
+      index === matchIndex
+        ? {
+            ...match,
+            scrambleTeams: [
+              ...(Array.isArray(match.scrambleTeams) ? match.scrambleTeams : []),
+              { teamName: "", players: [] },
+            ],
+          }
+        : match
+    )
+  );
+};
+
+const updateScramblePodTeam = (matchIndex, podIndex, teamName) => {
+  setMatchSetups((prev) =>
+    prev.map((match, index) => {
+      if (index !== matchIndex) return match;
+      const scrambleTeams = Array.isArray(match.scrambleTeams) ? [...match.scrambleTeams] : [];
+      if (!scrambleTeams[podIndex]) return match;
+
+      scrambleTeams[podIndex] = {
+        ...scrambleTeams[podIndex],
+        teamName,
+        players: [],
+      };
+
+      return {
+        ...match,
+        scrambleTeams,
+      };
+    })
+  );
+};
+
+const toggleScramblePodPlayer = (matchIndex, podIndex, playerName, checked) => {
+  setMatchSetups((prev) =>
+    prev.map((match, index) => {
+      if (index !== matchIndex) return match;
+      const scrambleTeams = Array.isArray(match.scrambleTeams) ? [...match.scrambleTeams] : [];
+      if (!scrambleTeams[podIndex]) return match;
+
+      const currentPlayers = Array.isArray(scrambleTeams[podIndex].players)
+        ? scrambleTeams[podIndex].players
+        : [];
+      let nextPlayers = currentPlayers;
+
+      if (checked) {
+        if (currentPlayers.includes(playerName) || currentPlayers.length >= 4) {
+          return match;
+        }
+        nextPlayers = [...currentPlayers, playerName];
+      } else {
+        nextPlayers = currentPlayers.filter((name) => name !== playerName);
+      }
+
+      scrambleTeams[podIndex] = {
+        ...scrambleTeams[podIndex],
+        players: nextPlayers,
+      };
+
+      return {
+        ...match,
+        scrambleTeams,
+      };
+    })
+  );
+};
+
+const removeScramblePod = (matchIndex, podIndex) => {
+  setMatchSetups((prev) =>
+    prev.map((match, index) =>
+      index === matchIndex
+        ? {
+            ...match,
+            scrambleTeams: (match.scrambleTeams || []).filter((_, currentPodIndex) => currentPodIndex !== podIndex),
+          }
+        : match
+    )
+  );
+};
+
   
 
   const addDayToFirebase = async () => {
@@ -244,6 +333,24 @@ const toggleTeamBestBallPlayer = (matchIndex, teamName, playerName, checked) => 
           return;
         }
       }
+
+      if (m.type === "scramble") {
+        const scrambleTeams = getScrambleTeams(m);
+
+        if (scrambleTeams.length === 0) {
+          alert(`${m.matchLabel}: add at least one scramble pod with two or more players.`);
+          return;
+        }
+
+        const hasInvalidPod = (m.scrambleTeams || []).some(
+          (entry) => entry?.teamName && (!Array.isArray(entry.players) || entry.players.length < 2)
+        );
+
+        if (hasInvalidPod) {
+          alert(`${m.matchLabel}: each scramble pod needs at least two players.`);
+          return;
+        }
+      }
     }
 
     const bestBallAssignments = new Map();
@@ -259,6 +366,25 @@ const toggleTeamBestBallPlayer = (matchIndex, teamName, playerName, checked) => 
             return;
           }
           bestBallAssignments.set(playerName, match.matchLabel);
+        });
+      });
+
+      if (hasDuplicatePlayer) return;
+    }
+
+    const scrambleAssignments = new Map();
+    for (const match of matchSetups) {
+      if (match.type !== "scramble") continue;
+
+      let hasDuplicatePlayer = false;
+      getScrambleTeams(match).forEach((entry) => {
+        entry.players.forEach((playerName) => {
+          if (scrambleAssignments.has(playerName)) {
+            alert(`${playerName} is already assigned to ${scrambleAssignments.get(playerName)}. Each player can only appear in one Scramble pod per day.`);
+            hasDuplicatePlayer = true;
+            return;
+          }
+          scrambleAssignments.set(playerName, match.matchLabel);
         });
       });
 
@@ -330,6 +456,27 @@ const toggleTeamBestBallPlayer = (matchIndex, teamName, playerName, checked) => 
           matchLabel: match.matchLabel,
           type: "teamBestBall",
           participants: getTeamBestBallParticipants(match),
+          ...(match.excludeFromIndividual ? { excludeFromIndividual: true } : {})
+        };
+      }
+
+      if (match.type === "scramble") {
+        const scrambleTeamCounts = new Map();
+        const scrambleTeams = getScrambleTeams(match).map((entry) => {
+          const currentCount = (scrambleTeamCounts.get(entry.teamName) || 0) + 1;
+          scrambleTeamCounts.set(entry.teamName, currentCount);
+
+          return {
+            teamName: entry.teamName,
+            players: entry.players,
+            podLabel: `${entry.teamName} Scramble ${currentCount}`,
+          };
+        });
+
+        return {
+          matchLabel: match.matchLabel,
+          type: "scramble",
+          scrambleTeams,
           ...(match.excludeFromIndividual ? { excludeFromIndividual: true } : {})
         };
       }
@@ -610,6 +757,7 @@ const toggleTeamBestBallPlayer = (matchIndex, teamName, playerName, checked) => 
         <option value="individualMatch9">Individual Match Play (Front/Back 9)</option>
         <option value="stableford">Stableford</option>
         <option value="teamBestBall">Team Best Ball</option>
+        <option value="scramble">Scramble</option>
       </select>
     </div>
 
@@ -992,6 +1140,86 @@ const toggleTeamBestBallPlayer = (matchIndex, teamName, playerName, checked) => 
         <span>
           {getTeamBestBallParticipants(match)
             .map((entry) => `${entry.teamName}: ${entry.players.join(", ")}`)
+            .join(" | ")}
+        </span>
+      </div>
+    )}
+  </div>
+)}
+
+{match.type === "scramble" && (
+  <div className="individual-nine-builder">
+    <h4>Scramble Pods</h4>
+    <p className="setup-help-text">
+      Build 2-4 player scramble pods inside each big team. Each pod will enter one scramble score per hole, and pods from the same team will add together on the main leaderboard.
+    </p>
+
+    {(match.scrambleTeams || []).map((entry, podIndex) => {
+      const availableTeam = teams.find((team) => team.name === entry.teamName);
+      const selectedPlayers = Array.isArray(entry.players) ? entry.players : [];
+
+      return (
+        <div key={`${match.matchLabel}-scramble-${podIndex}`} className="individual-nine-team-picker" style={{ marginBottom: "1rem" }}>
+          <div className="match-setup-inline-field">
+            <label>{`Pod ${podIndex + 1}`}</label>
+            <select
+              value={entry.teamName || ""}
+              onChange={(e) => updateScramblePodTeam(index, podIndex, e.target.value)}
+            >
+              <option value="">Select team</option>
+              {teams.map((team) => (
+                <option key={team.name} value={team.name}>
+                  {team.name}
+                </option>
+              ))}
+            </select>
+            <button type="button" onClick={() => removeScramblePod(index, podIndex)}>
+              Remove Pod
+            </button>
+          </div>
+
+          {entry.teamName && availableTeam ? (
+            <>
+              <p className="setup-help-text" style={{ marginTop: "0.35rem" }}>
+                {selectedPlayers.length} selected
+              </p>
+              {availableTeam.players?.map((player) => {
+                const isChecked = selectedPlayers.includes(player.name);
+                const isDisabled = !isChecked && selectedPlayers.length >= 4;
+
+                return (
+                  <label key={player.name} className="checkbox-label" style={{ display: "flex", alignItems: "center", gap: "8px", width: "fit-content", margin: "4px 0" }}>
+                    <input
+                      type="checkbox"
+                      style={{ width: "16px", margin: 0, flex: "0 0 auto" }}
+                      checked={isChecked}
+                      disabled={isDisabled}
+                      onChange={(e) => toggleScramblePodPlayer(index, podIndex, player.name, e.target.checked)}
+                    />
+                    <span>{formatPlayerOptionLabel(player)}</span>
+                  </label>
+                );
+              })}
+            </>
+          ) : (
+            <p className="setup-help-text" style={{ marginTop: "0.35rem" }}>
+              Choose the big team first, then select the scramble players.
+            </p>
+          )}
+        </div>
+      );
+    })}
+
+    <button type="button" onClick={() => addScramblePod(index)}>
+      Add Scramble Pod
+    </button>
+
+    {getScrambleTeams(match).length > 0 && (
+      <div className="individual-nine-preview">
+        <strong>Selected pods</strong>
+        <span>
+          {getScrambleTeams(match)
+            .map((entry, podIndex) => `Pod ${podIndex + 1} • ${entry.teamName}: ${entry.players.join(", ")}`)
             .join(" | ")}
         </span>
       </div>

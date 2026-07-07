@@ -279,6 +279,26 @@ function ScoreEntry({ selectedDate, tournamentId, matchType, players, selectedMa
       setLocalPlayers(allPlayers);
       setTeamPlayers({ team1: [], team2: [] });
     }
+
+    if (matchType === "scramble") {
+      const scrambleEntries = getScrambleTeams();
+      const allPods = scrambleEntries.map((entry) => {
+        const liveTeamObj = getLiveTeam(entry.teamName);
+
+        return {
+          name: entry.podLabel,
+          handicap: 0,
+          teamName: entry.teamName || "",
+          teamColor: getLiveTeamColor(entry.teamName || ""),
+          podPlayers: entry.players || [],
+          displayName: entry.podLabel,
+          liveTeamObj,
+        };
+      });
+
+      setLocalPlayers(allPods);
+      setTeamPlayers({ team1: [], team2: [] });
+    }
     
     
     
@@ -468,14 +488,26 @@ function ScoreEntry({ selectedDate, tournamentId, matchType, players, selectedMa
   }}, [scores, matchData, players, matchType]);
 
   useEffect(() => {
-    if (matchType !== "teamBestBall" || typeof setTeamPointsInApp !== "function") return;
+    if (!["teamBestBall", "scramble"].includes(matchType) || typeof setTeamPointsInApp !== "function") return;
 
     const teamTotals = {};
-    getTeamBestBallTeams().forEach((entry) => {
-      teamTotals[entry.teamName] = {
-        total: getTeamBestBallToPar(entry.players || [], [...Array(18).keys()])
-      };
-    });
+    if (matchType === "teamBestBall") {
+      getTeamBestBallTeams().forEach((entry) => {
+        teamTotals[entry.teamName] = {
+          total: getTeamBestBallToPar(entry.players || [], [...Array(18).keys()])
+        };
+      });
+    } else {
+      getScrambleTeams().forEach((entry) => {
+        const podTotal = getScramblePodToPar(entry.podLabel, [...Array(18).keys()]);
+        if (!teamTotals[entry.teamName]) {
+          teamTotals[entry.teamName] = { total: 0 };
+        }
+        if (typeof podTotal === "number") {
+          teamTotals[entry.teamName].total += podTotal;
+        }
+      });
+    }
 
     setTeamPointsInApp(teamTotals);
   }, [scores, matchType, selectedMatch, holes.length]);
@@ -745,6 +777,29 @@ function ScoreEntry({ selectedDate, tournamentId, matchType, players, selectedMa
       (entry) => entry?.teamName && Array.isArray(entry.players) && entry.players.length > 0
     );
   }
+
+  function getScrambleTeams() {
+    return (selectedMatch?.scrambleTeams || []).filter(
+      (entry) => entry?.teamName && entry?.podLabel && Array.isArray(entry.players) && entry.players.length > 0
+    );
+  }
+
+  function getScramblePodToPar(podLabel, holesRange) {
+    let total = 0;
+    let hasScores = false;
+
+    holesRange.forEach((holeIndex) => {
+      const net = scores[podLabel]?.[holeIndex]?.net;
+      const holePar = holes[holeIndex]?.par;
+
+      if (typeof net !== "number" || holePar == null || Number.isNaN(holePar)) return;
+
+      total += net - holePar;
+      hasScores = true;
+    });
+
+    return hasScores ? total : null;
+  }
   
 
   const saveScoresToFirebase = async () => {
@@ -812,6 +867,21 @@ function ScoreEntry({ selectedDate, tournamentId, matchType, players, selectedMa
         teamEntries.forEach((entry) => {
           const totalToPar = getTeamBestBallToPar(entry.players || [], [...Array(18).keys()]);
           teamPoints[entry.teamName] = { total: totalToPar };
+        });
+      }
+
+      if (matchType === "scramble") {
+        teamPoints = {};
+        const scrambleEntries = getScrambleTeams();
+
+        scrambleEntries.forEach((entry) => {
+          const totalToPar = getScramblePodToPar(entry.podLabel, [...Array(18).keys()]);
+          if (!teamPoints[entry.teamName]) {
+            teamPoints[entry.teamName] = { total: 0 };
+          }
+          if (typeof totalToPar === "number") {
+            teamPoints[entry.teamName].total += totalToPar;
+          }
         });
       }
       
@@ -1114,6 +1184,27 @@ function ScoreEntry({ selectedDate, tournamentId, matchType, players, selectedMa
     );
   })();
 
+  const scrambleStatusBlock = (() => {
+    if (matchType !== "scramble") return null;
+
+    const holesToCheck = visibleHalf === "front"
+      ? [...Array(9).keys()]
+      : [...Array(9).keys()].map((i) => i + 9);
+    const scrambleEntries = getScrambleTeams();
+
+    if (scrambleEntries.length === 0) return null;
+
+    return (
+      <div className="match-status" style={{ marginBottom: "10px" }}>
+        {scrambleEntries.map((entry) => (
+          <p key={entry.podLabel}>
+            <strong>{entry.podLabel}:</strong> {formatToPar(getScramblePodToPar(entry.podLabel, holesToCheck))}
+          </p>
+        ))}
+      </div>
+    );
+  })();
+
   const matchPlayStatusBlock = (() => {
     if (!["teamMatch18", "teamMatch9", "teamMatchFront9", "teamMatchBack9", "individualMatch18"].includes(matchType)) return null;
   
@@ -1161,6 +1252,7 @@ function ScoreEntry({ selectedDate, tournamentId, matchType, players, selectedMa
 
       {bestBallStatusBlock}
       {teamBestBallStatusBlock}
+      {scrambleStatusBlock}
 
       
 {matchType === "stableford" && teamPoints && (
@@ -1283,6 +1375,10 @@ function ScoreEntry({ selectedDate, tournamentId, matchType, players, selectedMa
                   const opponent = match.playerA === p.name ? match.playerB : match.playerA;
                   matchupLabel = `vs ${opponent}`;
                 }
+              }
+
+              if (matchType === "scramble" && Array.isArray(p.podPlayers) && p.podPlayers.length > 0) {
+                matchupLabel = p.podPlayers.join(", ");
               }
               
 

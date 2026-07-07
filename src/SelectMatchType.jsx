@@ -28,6 +28,7 @@ function SelectMatchType({ selectedDate, tournamentId, onSelectMatchType }) {
       individualMatch18: "Individual Match Play",
       individualMatch9: "Individual Match Play",
       teamBestBall: "Team Best Ball",
+      scramble: "Scramble",
       bestBall1: "Best Ball",
       bestBall2: "Best Ball",
     };
@@ -96,6 +97,10 @@ function SelectMatchType({ selectedDate, tournamentId, onSelectMatchType }) {
     } else if (matchObj.type === "teamBestBall") {
       players = (matchObj.participants || [])
         .flatMap((entry) => (entry.players || []).map((name) => ({ name })));
+    } else if (matchObj.type === "scramble") {
+      players = (matchObj.scrambleTeams || []).map((entry) => ({
+        name: entry.podLabel,
+      }));
     }
     
   
@@ -175,6 +180,13 @@ function SelectMatchType({ selectedDate, tournamentId, onSelectMatchType }) {
               .filter((entry) => Array.isArray(entry.players) && entry.players.length > 0)
               .map((entry) => `${entry.teamName}: ${entry.players.join(", ")}`)
               .join(" • ");
+            const scrambleTeams = Array.isArray(match.scrambleTeams)
+              ? match.scrambleTeams
+              : [];
+            const scrambleSummary = scrambleTeams
+              .filter((entry) => entry?.teamName && Array.isArray(entry.players) && entry.players.length > 0)
+              .map((entry) => `${entry.podLabel || entry.teamName}: ${entry.players.join(", ")}`)
+              .join(" • ");
 
 
         const summary =
@@ -188,6 +200,7 @@ function SelectMatchType({ selectedDate, tournamentId, onSelectMatchType }) {
             `${(match.participants.team0?.players || []).join(", ")} vs ${(match.participants.team1?.players || []).join(", ")}`) ||
           (match.type === "individualMatch18" && individualMatch18Players.length > 0 && individualMatch18Players.join(", ")) ||
           (match.type === "teamBestBall" && teamBestBallSummary) ||
+          (match.type === "scramble" && scrambleSummary) ||
           ((match.type === "bestBall1" || match.type === "bestBall2") && bestBallPlayers.length > 0 && bestBallPlayers.join(", ")) ||
           "Tap to begin scoring";
 
