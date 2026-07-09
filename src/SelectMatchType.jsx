@@ -29,6 +29,7 @@ function SelectMatchType({ selectedDate, tournamentId, onSelectMatchType }) {
       individualMatch9: "Individual Match Play",
       teamBestBall: "Team Best Ball",
       scramble: "Scramble",
+      scramble9: "Scramble",
       bestBall1: "Best Ball",
       bestBall2: "Best Ball",
     };
@@ -76,7 +77,15 @@ function SelectMatchType({ selectedDate, tournamentId, onSelectMatchType }) {
       const team1Players = matchObj.participants?.team1?.players || [];
       players = [...team0Players, ...team1Players].map(name => ({ name }));
     } else if (matchObj.type === "stroke") {
-      players = (matchObj.players || matchObj.participants || []).map((entry) => ({
+      const strokeEntries = Array.isArray(matchObj.players)
+        ? matchObj.players
+        : Array.isArray(matchObj.participants)
+        ? matchObj.participants
+        : typeof matchObj.participants === "object" && matchObj.participants !== null
+        ? Object.keys(matchObj.participants).filter((name) => matchObj.participants[name])
+        : [];
+
+      players = strokeEntries.map((entry) => ({
         name: typeof entry === "string" ? entry : entry.name,
       }));
     } else if (matchObj.type === "individualMatch18") {
@@ -101,6 +110,11 @@ function SelectMatchType({ selectedDate, tournamentId, onSelectMatchType }) {
       players = (matchObj.scrambleTeams || []).map((entry) => ({
         name: entry.podLabel,
       }));
+    } else if (matchObj.type === "scramble9") {
+      players = [
+        ...((matchObj.front9?.scrambleTeams || []).map((entry) => ({ name: entry.podLabel }))),
+        ...((matchObj.back9?.scrambleTeams || []).map((entry) => ({ name: entry.podLabel }))),
+      ];
     }
     
   
@@ -187,6 +201,20 @@ function SelectMatchType({ selectedDate, tournamentId, onSelectMatchType }) {
               .filter((entry) => entry?.teamName && Array.isArray(entry.players) && entry.players.length > 0)
               .map((entry) => `${entry.podLabel || entry.teamName}: ${entry.players.join(", ")}`)
               .join(" • ");
+            const scramble9FrontTeams = Array.isArray(match.front9?.scrambleTeams)
+              ? match.front9.scrambleTeams
+              : [];
+            const scramble9BackTeams = Array.isArray(match.back9?.scrambleTeams)
+              ? match.back9.scrambleTeams
+              : [];
+            const scramble9Summary = [
+              scramble9FrontTeams.length > 0
+                ? `Front: ${scramble9FrontTeams.map((entry) => `${entry.podLabel || entry.teamName}: ${entry.players.join(", ")}`).join(" • ")}`
+                : "",
+              scramble9BackTeams.length > 0
+                ? `Back: ${scramble9BackTeams.map((entry) => `${entry.podLabel || entry.teamName}: ${entry.players.join(", ")}`).join(" • ")}`
+                : "",
+            ].filter(Boolean).join(" | ");
 
 
         const summary =
@@ -201,6 +229,7 @@ function SelectMatchType({ selectedDate, tournamentId, onSelectMatchType }) {
           (match.type === "individualMatch18" && individualMatch18Players.length > 0 && individualMatch18Players.join(", ")) ||
           (match.type === "teamBestBall" && teamBestBallSummary) ||
           (match.type === "scramble" && scrambleSummary) ||
+          (match.type === "scramble9" && scramble9Summary) ||
           ((match.type === "bestBall1" || match.type === "bestBall2") && bestBallPlayers.length > 0 && bestBallPlayers.join(", ")) ||
           "Tap to begin scoring";
 

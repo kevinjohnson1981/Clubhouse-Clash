@@ -299,6 +299,21 @@ function ScoreEntry({ selectedDate, tournamentId, matchType, players, selectedMa
       setLocalPlayers(allPods);
       setTeamPlayers({ team1: [], team2: [] });
     }
+
+    if (matchType === "scramble9") {
+      const scrambleEntries = getScrambleNineTeamsForTab();
+      const allPods = scrambleEntries.map((entry) => ({
+        name: entry.podLabel,
+        handicap: 0,
+        teamName: entry.teamName || "",
+        teamColor: getLiveTeamColor(entry.teamName || ""),
+        podPlayers: entry.players || [],
+        displayName: entry.podLabel,
+      }));
+
+      setLocalPlayers(allPods);
+      setTeamPlayers({ team1: [], team2: [] });
+    }
     
     
     
@@ -488,7 +503,14 @@ function ScoreEntry({ selectedDate, tournamentId, matchType, players, selectedMa
   }}, [scores, matchData, players, matchType]);
 
   useEffect(() => {
-    if (!["teamBestBall", "scramble"].includes(matchType) || typeof setTeamPointsInApp !== "function") return;
+    if (matchType !== "stroke" || typeof setTeamPointsInApp !== "function") return;
+
+    const strokeTeamPoints = getStrokeTeamPoints();
+    setTeamPointsInApp(strokeTeamPoints);
+  }, [scores, matchType, localPlayers, holes.length]);
+
+  useEffect(() => {
+    if (!["teamBestBall", "scramble", "scramble9"].includes(matchType) || typeof setTeamPointsInApp !== "function") return;
 
     const teamTotals = {};
     if (matchType === "teamBestBall") {
@@ -497,7 +519,7 @@ function ScoreEntry({ selectedDate, tournamentId, matchType, players, selectedMa
           total: getTeamBestBallToPar(entry.players || [], [...Array(18).keys()])
         };
       });
-    } else {
+    } else if (matchType === "scramble") {
       getScrambleTeams().forEach((entry) => {
         const podTotal = getScramblePodToPar(entry.podLabel, [...Array(18).keys()]);
         if (!teamTotals[entry.teamName]) {
@@ -507,6 +529,22 @@ function ScoreEntry({ selectedDate, tournamentId, matchType, players, selectedMa
           teamTotals[entry.teamName].total += podTotal;
         }
       });
+    } else {
+      const applyHalfTotals = (halfKey, holesRange, targetField) => {
+        getScrambleNineTeams(halfKey).forEach((entry) => {
+          const podTotal = getScramblePodToPar(entry.podLabel, holesRange);
+          if (!teamTotals[entry.teamName]) {
+            teamTotals[entry.teamName] = { front9: 0, back9: 0, total: 0 };
+          }
+          if (typeof podTotal === "number") {
+            teamTotals[entry.teamName][targetField] += podTotal;
+            teamTotals[entry.teamName].total += podTotal;
+          }
+        });
+      };
+
+      applyHalfTotals("front9", [...Array(9).keys()], "front9");
+      applyHalfTotals("back9", [...Array(9).keys()].map((i) => i + 9), "back9");
     }
 
     setTeamPointsInApp(teamTotals);
@@ -602,6 +640,37 @@ function ScoreEntry({ selectedDate, tournamentId, matchType, players, selectedMa
       const scoreObj = playerScores[i];
       return total + (parseInt(scoreObj?.net) || 0);
     }, 0);
+  };
+
+  const hasCompleteScorecard = (playerName) => {
+    const playerScores = scores[playerName] || {};
+    return holes.length > 0 && holes.every((_, i) => typeof playerScores[i]?.net === "number");
+  };
+
+  const getStrokeTeamPoints = () => {
+    if (matchType !== "stroke") return null;
+
+    const completedPlayers = localPlayers.filter(
+      (player) => player?.name && player?.teamName && hasCompleteScorecard(player.name)
+    );
+
+    if (completedPlayers.length === 0) return null;
+
+    const lowestNet = Math.min(...completedPlayers.map((player) => getNetTotal(player.name)));
+    const winningTeams = [...new Set(
+      completedPlayers
+        .filter((player) => getNetTotal(player.name) === lowestNet)
+        .map((player) => player.teamName)
+        .filter(Boolean)
+    )];
+
+    if (winningTeams.length === 0) return null;
+
+    const splitPoints = 1 / winningTeams.length;
+    return winningTeams.reduce((totals, teamName) => {
+      totals[teamName] = { total: splitPoints };
+      return totals;
+    }, {});
   };
   
 
@@ -784,6 +853,16 @@ function ScoreEntry({ selectedDate, tournamentId, matchType, players, selectedMa
     );
   }
 
+  function getScrambleNineTeams(halfKey) {
+    return (selectedMatch?.[halfKey]?.scrambleTeams || []).filter(
+      (entry) => entry?.teamName && entry?.podLabel && Array.isArray(entry.players) && entry.players.length > 0
+    );
+  }
+
+  function getScrambleNineTeamsForTab() {
+    return scorecardTab === "back9" ? getScrambleNineTeams("back9") : getScrambleNineTeams("front9");
+  }
+
   function getScramblePodToPar(podLabel, holesRange) {
     let total = 0;
     let hasScores = false;
@@ -860,6 +939,10 @@ function ScoreEntry({ selectedDate, tournamentId, matchType, players, selectedMa
         });
       }
 
+      if (matchType === "stroke") {
+        teamPoints = getStrokeTeamPoints();
+      }
+
       if (matchType === "teamBestBall") {
         teamPoints = {};
         const teamEntries = getTeamBestBallTeams();
@@ -883,6 +966,26 @@ function ScoreEntry({ selectedDate, tournamentId, matchType, players, selectedMa
             teamPoints[entry.teamName].total += totalToPar;
           }
         });
+      }
+
+      if (matchType === "scramble9") {
+        teamPoints = {};
+
+        const applyHalfTotals = (halfKey, holesRange, targetField) => {
+          getScrambleNineTeams(halfKey).forEach((entry) => {
+            const totalToPar = getScramblePodToPar(entry.podLabel, holesRange);
+            if (!teamPoints[entry.teamName]) {
+              teamPoints[entry.teamName] = { front9: 0, back9: 0, total: 0 };
+            }
+            if (typeof totalToPar === "number") {
+              teamPoints[entry.teamName][targetField] += totalToPar;
+              teamPoints[entry.teamName].total += totalToPar;
+            }
+          });
+        };
+
+        applyHalfTotals("front9", [...Array(9).keys()], "front9");
+        applyHalfTotals("back9", [...Array(9).keys()].map((i) => i + 9), "back9");
       }
       
       
@@ -1185,12 +1288,14 @@ function ScoreEntry({ selectedDate, tournamentId, matchType, players, selectedMa
   })();
 
   const scrambleStatusBlock = (() => {
-    if (matchType !== "scramble") return null;
+    if (!["scramble", "scramble9"].includes(matchType)) return null;
 
     const holesToCheck = visibleHalf === "front"
       ? [...Array(9).keys()]
       : [...Array(9).keys()].map((i) => i + 9);
-    const scrambleEntries = getScrambleTeams();
+    const scrambleEntries = matchType === "scramble"
+      ? getScrambleTeams()
+      : getScrambleNineTeamsForTab();
 
     if (scrambleEntries.length === 0) return null;
 
@@ -1377,7 +1482,7 @@ function ScoreEntry({ selectedDate, tournamentId, matchType, players, selectedMa
                 }
               }
 
-              if (matchType === "scramble" && Array.isArray(p.podPlayers) && p.podPlayers.length > 0) {
+              if (["scramble", "scramble9"].includes(matchType) && Array.isArray(p.podPlayers) && p.podPlayers.length > 0) {
                 matchupLabel = p.podPlayers.join(", ");
               }
               
@@ -1392,7 +1497,7 @@ function ScoreEntry({ selectedDate, tournamentId, matchType, players, selectedMa
                 }}
                 >
                   {p.name}
-                  {matchType === "individualMatch9" && (
+                  {["individualMatch9", "scramble", "scramble9"].includes(matchType) && matchupLabel && (
                     <div style={{ fontSize: "0.65em", fontWeight: "normal" }}>{matchupLabel}</div>
                   )}
                 </th>
